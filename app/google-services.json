@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "442101758169",
+    "project_id": "stationary-16708",
+    "storage_bucket": "stationary-16708.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:442101758169:android:2caac8674c52b3b30ca6c8",
+        "android_client_info": {
+          "package_name": "com.humblecoders.stationary"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBZbdj9OUBGQmFkdNuAW2Mhicvdro3H8UM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
