@@ -63,7 +63,7 @@ dependencies {
 
     // PDF Viewer
     implementation("com.github.mhiew:android-pdf-viewer:3.2.0-beta.3")
-    implementation(libs.androidx.navigation.compose.jvmstubs)
+    implementation ("androidx.navigation:navigation-compose:2.7.6")
     implementation("com.razorpay:checkout:1.6.33")
 
 

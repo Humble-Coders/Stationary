@@ -4,13 +4,14 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.Composable
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
+import androidx.compose.runtime.remember
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.ComposeNavigator
+import androidx.navigation.compose.DialogNavigator
 import com.humblecoders.stationary.data.repository.PrintOrderRepository
 import com.humblecoders.stationary.data.repository.ShopSettingsRepository
 import com.humblecoders.stationary.data.service.RazorpayService
-import com.humblecoders.stationary.ui.screen.*
+import com.humblecoders.stationary.navigation.PrintShopNavigation
 import com.humblecoders.stationary.ui.theme.StationaryTheme
 import com.humblecoders.stationary.ui.viewmodel.*
 
@@ -33,7 +34,7 @@ class MainActivity : ComponentActivity() {
         initializeViewModels()
 
         setContent {
-            StationaryTheme  {
+            StationaryTheme {
                 PrintShopApp()
             }
         }
@@ -55,69 +56,22 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun PrintShopApp() {
-        val navController = rememberNavController()
-
-        NavHost(
-            navController = navController,
-            startDestination = "customer_info"
-        ) {
-            composable("customer_info") {
-                CustomerInfoScreen(
-                    viewModel = customerInfoViewModel,
-                    onCustomerInfoSubmitted = { customerId, customerPhone ->
-                        homeViewModel.setCustomerId(customerId)
-                        documentUploadViewModel.setCustomerInfo(customerId, customerPhone)
-                        navController.navigate("home") {
-                            popUpTo("customer_info") { inclusive = true }
-                        }
-                    }
-                )
-            }
-
-            composable("home") {
-                HomeScreen(
-                    mainViewModel = mainViewModel,
-                    homeViewModel = homeViewModel,
-                    onNavigateToUpload = {
-                        navController.navigate("document_upload")
-                    }
-                )
-            }
-
-            composable("document_upload") {
-                DocumentUploadScreen(
-                    viewModel = documentUploadViewModel,
-                    onNavigateBack = {
-                        navController.popBackStack()
-                    },
-                    onNavigateToPayment = { orderId, amount, customerPhone ->
-                        navController.navigate("payment/$orderId/$amount/$customerPhone")
-                    }
-                )
-            }
-
-            composable("payment/{orderId}/{amount}/{customerPhone}") { backStackEntry ->
-                val orderId = backStackEntry.arguments?.getString("orderId") ?: ""
-                val amount = backStackEntry.arguments?.getString("amount")?.toDoubleOrNull() ?: 0.0
-                val customerPhone = backStackEntry.arguments?.getString("customerPhone") ?: ""
-
-                PaymentScreen(
-                    viewModel = paymentViewModel,
-                    orderId = orderId,
-                    amount = amount,
-                    customerPhone = customerPhone,
-                    activity = this@MainActivity,
-                    onNavigateBack = {
-                        navController.popBackStack()
-                    },
-                    onPaymentSuccess = {
-                        navController.navigate("home") {
-                            popUpTo("document_upload") { inclusive = true }
-                        }
-                    }
-                )
+        // Create NavController with proper context and lifecycle
+        val navController = remember {
+            NavHostController(this@MainActivity).apply {
+                navigatorProvider.addNavigator(ComposeNavigator())
+                navigatorProvider.addNavigator(DialogNavigator())
             }
         }
+
+        PrintShopNavigation(
+            navController = navController,
+            mainViewModel = mainViewModel,
+            homeViewModel = homeViewModel,
+            documentUploadViewModel = documentUploadViewModel,
+            paymentViewModel = paymentViewModel,
+            customerInfoViewModel = customerInfoViewModel,
+            activity = this@MainActivity
+        )
     }
 }
-
