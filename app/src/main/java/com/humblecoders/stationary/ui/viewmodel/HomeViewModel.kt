@@ -1,16 +1,14 @@
 package com.humblecoders.stationary.ui.viewmodel
 
-// ui/viewmodel/HomeViewModel.kt
-
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.humblecoders.stationary.data.model.PrintOrder
 import com.humblecoders.stationary.data.repository.PrintOrderRepository
 import com.humblecoders.stationary.data.repository.ShopSettingsRepository
-
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 
 data class HomeUiState(
@@ -44,66 +42,49 @@ class HomeViewModel(
 
     private fun observeShopStatus() {
         viewModelScope.launch {
-            try {
-                shopSettingsRepository.observeShopStatus().collect { isOpen ->
+            shopSettingsRepository.observeShopStatus()
+                .catch { e ->
                     _uiState.value = _uiState.value.copy(
-                        isShopOpen = isOpen,
-                        isLoading = false
+                        isLoading = false,
+                        error = "Failed to load shop status: ${e.message}"
                     )
                 }
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = e.message
-                )
-            }
+                .collect { isOpen ->
+                    _uiState.value = _uiState.value.copy(
+                        isShopOpen = isOpen,
+                        isLoading = false,
+                        error = null
+                    )
+                }
         }
     }
-
-    // Add this to HomeViewModel.kt
-    private val _ordersList = mutableListOf<PrintOrder>()
 
     private fun observeUserOrders() {
         if (_uiState.value.customerId.isEmpty()) return
 
         viewModelScope.launch {
-            try {
-                // Collect and store orders locally
-                printOrderRepository.observeUserOrders(_uiState.value.customerId).collect { orders ->
-                    _ordersList.clear()
-                    _ordersList.addAll(orders)
-
-                    // Sort orders by creation date (newest first)
-                    _ordersList.sortByDescending { it.createdAt.toDate().time }
-
+            printOrderRepository.observeUserOrders(_uiState.value.customerId)
+                .catch { e ->
                     _uiState.value = _uiState.value.copy(
-                        orders = _ordersList.toList(),
-                        error = null
+                        error = "Failed to load orders: ${e.message}",
+                        isLoading = false
                     )
                 }
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    error = "Failed to load orders: ${e.message}"
-                )
-            }
+                .collect { orders ->
+                    _uiState.value = _uiState.value.copy(
+                        orders = orders.sortedByDescending { it.createdAt.toDate().time },
+                        error = null,
+                        isLoading = false
+                    )
+                }
         }
     }
-    // Add this to HomeViewModel.kt
+
     fun refreshOrders() {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-            try {
-                // Force refresh the orders
-                // This assumes you have implemented a mechanism to refresh orders
-                // from the repository
-                observeUserOrders()
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = "Failed to refresh: ${e.message}"
-                )
-            }
-        }
+        if (_uiState.value.customerId.isEmpty()) return
+
+        _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+        observeUserOrders()
     }
 
     fun clearError() {

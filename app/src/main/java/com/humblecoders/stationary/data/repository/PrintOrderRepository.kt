@@ -34,11 +34,40 @@ class PrintOrderRepository {
         return uploadTask.storage.downloadUrl.await().toString()
     }
 
+
+// Add this to PrintOrderRepository.kt
+
+    private fun PrintOrder.toFirestoreMap(): Map<String, Any?> {
+        return mapOf(
+            "orderId" to orderId,
+            "customerId" to customerId,
+            "customerPhone" to customerPhone,
+            "documentName" to documentName,
+            "documentUrl" to documentUrl,
+            "documentSize" to documentSize,
+            "pageCount" to pageCount,
+            "printSettings" to printSettings,
+            "paymentStatus" to paymentStatus,
+            "paymentAmount" to paymentAmount,
+            "razorpayOrderId" to razorpayOrderId,
+            "razorpayPaymentId" to razorpayPaymentId,
+            "orderStatus" to orderStatus,
+            "hasSettings" to hasSettings,
+            "isPaid" to isPaid,  // Explicit boolean
+            "canAutoPrint" to canAutoPrint,
+            "queuePriority" to queuePriority,
+            "isInQueue" to isInQueue,
+            "createdAt" to createdAt,
+            "updatedAt" to updatedAt
+        )
+    }
+
+    // Then use in createOrder:
     suspend fun createOrder(order: PrintOrder): String {
         val orderId = if (order.orderId.isEmpty()) UUID.randomUUID().toString() else order.orderId
         val orderWithId = order.copy(orderId = orderId)
 
-        ordersCollection.document(orderId).set(orderWithId).await()
+        ordersCollection.document(orderId).set(orderWithId.toFirestoreMap()).await()
         return orderId
     }
 
@@ -50,32 +79,14 @@ class PrintOrderRepository {
             "razorpayPaymentId" to paymentData.razorpayPaymentId,
             "paymentAmount" to paymentData.amount,
             "canAutoPrint" to true,
-            "updatedAt" to com.google.firebase.Timestamp.now()
+            "updatedAt" to com.google.firebase.Timestamp.now(),
+            "paid" to true
         )
 
         ordersCollection.document(orderId).update(updates).await()
     }
 
-    suspend fun updateOrderSettings(orderId: String, settings: PrintSettings, pageCount: Int) {
-        val canAutoPrint = true
-        val updates = mapOf(
-            "printSettings" to settings,
-            "hasSettings" to true,
-            "canAutoPrint" to canAutoPrint,
-            "pageCount" to pageCount,
-            "updatedAt" to com.google.firebase.Timestamp.now()
-        )
 
-        ordersCollection.document(orderId).update(updates).await()
-    }
-
-    fun calculatePrice(settings: PrintSettings, pageCount: Int): Double {
-        val pricePerPage = when (settings.colorMode) {
-            ColorMode.COLOR -> 5.0
-            ColorMode.BW -> 2.0
-        }
-        return pricePerPage * pageCount * settings.copies
-    }
 
     fun observeUserOrders(customerId: String): Flow<List<PrintOrder>> {
         return ordersCollection
@@ -89,14 +100,6 @@ class PrintOrderRepository {
             }
     }
 
-    suspend fun getOrder(orderId: String): PrintOrder? {
-        return try {
-            val doc = ordersCollection.document(orderId).get().await()
-            doc.toObject(PrintOrder::class.java)
-        } catch (e: Exception) {
-            null
-        }
-    }
 
     fun calculatePrice(settings: PrintSettings, pageCount: Int, shopSettings: ShopSettings): Double {
         val pricePerPage = when (settings.colorMode) {

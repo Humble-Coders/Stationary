@@ -1,7 +1,7 @@
 package com.humblecoders.stationary.data.model
 
-// data/model/PrintOrder.kt
 import com.google.firebase.Timestamp
+import com.google.firebase.firestore.PropertyName
 
 data class PrintOrder(
     val orderId: String = "",
@@ -17,14 +17,68 @@ data class PrintOrder(
     val razorpayOrderId: String = "",
     val razorpayPaymentId: String = "",
     val orderStatus: OrderStatus = OrderStatus.SUBMITTED,
+
+    @PropertyName("hasSettings")
     val hasSettings: Boolean = false,
+
+    @PropertyName("isPaid")
     val isPaid: Boolean = false,
+
+    @PropertyName("canAutoPrint")
     val canAutoPrint: Boolean = false,
+
     val queuePriority: Int = 0,
+
+    @PropertyName("isInQueue")
     val isInQueue: Boolean = false,
+
     val createdAt: Timestamp = Timestamp.now(),
     val updatedAt: Timestamp = Timestamp.now()
-)
+) {
+    // No-arg constructor for Firestore
+    constructor() : this(
+        orderId = "",
+        customerId = "",
+        customerPhone = "",
+        documentName = "",
+        documentUrl = "",
+        documentSize = 0,
+        pageCount = 0,
+        printSettings = null,
+        paymentStatus = PaymentStatus.UNPAID,
+        paymentAmount = 0.0,
+        razorpayOrderId = "",
+        razorpayPaymentId = "",
+        orderStatus = OrderStatus.SUBMITTED,
+        hasSettings = false,
+        isPaid = false,
+        canAutoPrint = false,
+        queuePriority = 0,
+        isInQueue = false,
+        createdAt = Timestamp.now(),
+        updatedAt = Timestamp.now()
+    )
+}
+
+data class ShopSettings(
+    val shopId: String = "default",
+
+    @PropertyName("shopOpen")
+    val shopOpen: Boolean = true,
+
+    @PropertyName("autoPrintEnabled")
+    val autoPrintEnabled: Boolean = false,
+
+    val pricePerPage: PricePerPage = PricePerPage()
+) {
+    // No-arg constructor for Firestore
+    constructor() : this(
+        shopId = "default",
+        shopOpen = true,
+        autoPrintEnabled = false,
+        pricePerPage = PricePerPage()
+    )
+}
 
 data class PrintSettings(
     val colorMode: ColorMode = ColorMode.BW,
@@ -36,12 +90,7 @@ data class PrintSettings(
     val quality: Quality = Quality.NORMAL
 )
 
-data class ShopSettings(
-    val shopId: String = "default",
-    val shopOpen: Boolean = true,
-    val autoPrintEnabled: Boolean = false,
-    val pricePerPage: PricePerPage = PricePerPage()
-)
+
 
 data class PricePerPage(
     val bw: Double = 2.0,
