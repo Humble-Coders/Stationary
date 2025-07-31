@@ -25,8 +25,10 @@ class PrintOrderRepository {
     private val storageRef = storage.reference.child("documents")
 
     suspend fun uploadDocument(uri: Uri): String {
-        val orderId = UUID.randomUUID().toString()
-        val documentRef = storageRef.child("$orderId/original.pdf")
+        val timestamp = System.currentTimeMillis()
+        val uniqueId = UUID.randomUUID().toString()
+        val fileName = "${timestamp}_${uniqueId}.pdf"
+        val documentRef = storageRef.child(fileName)
 
         val uploadTask = documentRef.putFile(uri).await()
         return uploadTask.storage.downloadUrl.await().toString()
@@ -47,7 +49,7 @@ class PrintOrderRepository {
             "razorpayOrderId" to paymentData.razorpayOrderId,
             "razorpayPaymentId" to paymentData.razorpayPaymentId,
             "paymentAmount" to paymentData.amount,
-            "canAutoPrint" to true, // Will be true if hasSettings is also true
+            "canAutoPrint" to true,
             "updatedAt" to com.google.firebase.Timestamp.now()
         )
 
@@ -55,7 +57,7 @@ class PrintOrderRepository {
     }
 
     suspend fun updateOrderSettings(orderId: String, settings: PrintSettings, pageCount: Int) {
-        val canAutoPrint = true // Will be true if isPaid is also true
+        val canAutoPrint = true
         val updates = mapOf(
             "printSettings" to settings,
             "hasSettings" to true,
@@ -96,9 +98,7 @@ class PrintOrderRepository {
         }
     }
 
-    // Replace the calculatePrice method in PrintOrderRepository.kt
-
-     fun calculatePrice(settings: PrintSettings, pageCount: Int, shopSettings: ShopSettings): Double {
+    fun calculatePrice(settings: PrintSettings, pageCount: Int, shopSettings: ShopSettings): Double {
         val pricePerPage = when (settings.colorMode) {
             ColorMode.COLOR -> shopSettings.pricePerPage.color
             ColorMode.BW -> shopSettings.pricePerPage.bw
@@ -147,7 +147,7 @@ class PrintOrderRepository {
 
             return pages.size.coerceAtLeast(1)
         } catch (e: Exception) {
-            return totalPages // Fallback to all pages if parsing fails
+            return totalPages
         }
     }
 }

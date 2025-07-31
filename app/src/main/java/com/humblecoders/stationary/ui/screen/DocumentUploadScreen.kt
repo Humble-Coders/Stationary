@@ -139,9 +139,7 @@ fun DocumentUploadScreen(
                 ) {
                     Button(
                         onClick = {
-                            var orderId = uiState.orderId
-                            orderId="123"
-                            if (orderId != null) {
+                            viewModel.submitOrderWithPayment { orderId ->
                                 onNavigateToPayment(orderId, uiState.calculatedPrice, uiState.customerPhone)
                             }
                         },

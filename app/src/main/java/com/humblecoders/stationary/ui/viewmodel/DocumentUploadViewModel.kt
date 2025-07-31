@@ -52,8 +52,6 @@ class DocumentUploadViewModel(
         )
     }
 
-
-
     fun selectFile(context: Context, uri: Uri) {
         if (!FileUtils.isValidPdfFile(context, uri)) {
             _uiState.value = _uiState.value.copy(error = "Please select a valid PDF file under 50MB")
@@ -62,7 +60,7 @@ class DocumentUploadViewModel(
 
         val fileName = FileUtils.getFileName(context, uri)
         val fileSize = FileUtils.getFileSize(context, uri)
-        val pageCount = FileUtils.getPdfPageCount(context, uri) // Use real PDF parsing
+        val pageCount = FileUtils.getPdfPageCount(context, uri)
 
         _uiState.value = _uiState.value.copy(
             selectedFile = uri,
@@ -72,11 +70,62 @@ class DocumentUploadViewModel(
             error = null
         )
 
-        // Recalculate price with new page count
         recalculatePrice()
     }
 
+    fun submitOrderWithPayment(onOrderCreated: (String) -> Unit) {
+        if (!_uiState.value.isShopOpen) {
+            _uiState.value = _uiState.value.copy(error = "Shop is currently closed")
+            return
+        }
 
+        if (_uiState.value.customerId.isEmpty() || _uiState.value.customerPhone.isEmpty()) {
+            _uiState.value = _uiState.value.copy(error = "Customer information is required")
+            return
+        }
+
+        val selectedFile = _uiState.value.selectedFile
+        if (selectedFile == null) {
+            _uiState.value = _uiState.value.copy(error = "Please select a file first")
+            return
+        }
+
+        viewModelScope.launch {
+            try {
+                _uiState.value = _uiState.value.copy(isUploading = true, error = null)
+
+                val documentUrl = printOrderRepository.uploadDocument(selectedFile)
+
+                val order = PrintOrder(
+                    customerId = _uiState.value.customerId,
+                    customerPhone = _uiState.value.customerPhone,
+                    documentName = _uiState.value.fileName,
+                    documentUrl = documentUrl,
+                    documentSize = _uiState.value.fileSize,
+                    pageCount = _uiState.value.pageCount,
+                    printSettings = _uiState.value.printSettings,
+                    hasSettings = true,
+                    isPaid = false,
+                    canAutoPrint = false
+                )
+
+                val orderId = printOrderRepository.createOrder(order)
+
+                _uiState.value = _uiState.value.copy(
+                    isUploading = false,
+                    orderId = orderId
+                )
+
+                onOrderCreated(orderId)
+
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isUploading = false,
+                    error = "Upload failed: ${e.message}"
+                )
+            }
+        }
+    }
 
     fun submitOrderWithoutPayment() {
         if (!_uiState.value.isShopOpen) {
@@ -181,11 +230,6 @@ class DocumentUploadViewModel(
         }
     }
 
-    private fun estimatePageCount(fileSize: Long): Int {
-        val avgBytesPerPage = 100_000L
-        return (fileSize / avgBytesPerPage).toInt().coerceAtLeast(1)
-    }
-
     fun clearError() {
         _uiState.value = _uiState.value.copy(error = null)
     }
@@ -198,10 +242,8 @@ class DocumentUploadViewModel(
         )
     }
 
-    // Add this property to DocumentUploadViewModel class
     private var currentShopSettings: ShopSettings = ShopSettings()
 
-    // Update the observeShopStatus method
     private fun observeShopStatus() {
         viewModelScope.launch {
             try {
@@ -209,7 +251,6 @@ class DocumentUploadViewModel(
                     currentShopSettings = settings
                     _uiState.value = _uiState.value.copy(isShopOpen = settings.shopOpen)
 
-                    // Recalculate price if file is selected
                     if (_uiState.value.selectedFile != null) {
                         recalculatePrice()
                     }
@@ -220,7 +261,6 @@ class DocumentUploadViewModel(
         }
     }
 
-    // Add this new method to DocumentUploadViewModel
     private fun recalculatePrice() {
         viewModelScope.launch {
             try {
@@ -236,7 +276,6 @@ class DocumentUploadViewModel(
         }
     }
 
-    // Update the updatePrintSettings method
     fun updatePrintSettings(settings: PrintSettings) {
         _uiState.value = _uiState.value.copy(printSettings = settings)
         recalculatePrice()
