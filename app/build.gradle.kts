@@ -65,6 +65,13 @@ dependencies {
     implementation("com.github.mhiew:android-pdf-viewer:3.2.0-beta.3")
     implementation ("androidx.navigation:navigation-compose:2.7.6")
     implementation("com.razorpay:checkout:1.6.33")
+    implementation("androidx.datastore:datastore-preferences:1.0.0")
+    //EXTENDED ICONS
+    implementation("androidx.compose.material:material-icons-extended:1.5.0")
+
+    implementation("androidx.compose.material:material:1.5.4")
+
+
 
 
 

@@ -60,20 +60,47 @@ class HomeViewModel(
         }
     }
 
+    // Add this to HomeViewModel.kt
+    private val _ordersList = mutableListOf<PrintOrder>()
+
     private fun observeUserOrders() {
         if (_uiState.value.customerId.isEmpty()) return
 
         viewModelScope.launch {
             try {
+                // Collect and store orders locally
                 printOrderRepository.observeUserOrders(_uiState.value.customerId).collect { orders ->
+                    _ordersList.clear()
+                    _ordersList.addAll(orders)
+
+                    // Sort orders by creation date (newest first)
+                    _ordersList.sortByDescending { it.createdAt.toDate().time }
+
                     _uiState.value = _uiState.value.copy(
-                        orders = orders,
+                        orders = _ordersList.toList(),
                         error = null
                     )
                 }
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
-                    error = e.message
+                    error = "Failed to load orders: ${e.message}"
+                )
+            }
+        }
+    }
+    // Add this to HomeViewModel.kt
+    fun refreshOrders() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+            try {
+                // Force refresh the orders
+                // This assumes you have implemented a mechanism to refresh orders
+                // from the repository
+                observeUserOrders()
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Failed to refresh: ${e.message}"
                 )
             }
         }

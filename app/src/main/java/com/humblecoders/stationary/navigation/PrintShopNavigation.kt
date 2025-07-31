@@ -28,11 +28,13 @@ fun PrintShopNavigation(
     documentUploadViewModel: DocumentUploadViewModel,
     paymentViewModel: PaymentViewModel,
     customerInfoViewModel: CustomerInfoViewModel,
-    activity: Activity
+    activity: Activity,
+    startDestination: String = Screen.CustomerInfo.route
+
 ) {
     NavHost(
         navController = navController,
-        startDestination = Screen.CustomerInfo.route
+        startDestination = startDestination
     ) {
         composable(Screen.CustomerInfo.route) {
             CustomerInfoScreen(

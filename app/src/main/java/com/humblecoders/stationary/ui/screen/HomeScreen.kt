@@ -1,24 +1,40 @@
 package com.humblecoders.stationary.ui.screen
 
-
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Print
+import androidx.compose.material.pullrefresh.PullRefreshIndicator
+import androidx.compose.material.pullrefresh.pullRefresh
+import androidx.compose.material.pullrefresh.rememberPullRefreshState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.humblecoders.stationary.data.model.PrintOrder
 import com.humblecoders.stationary.ui.component.OrderCard
 import com.humblecoders.stationary.ui.component.ShopClosedCard
 import com.humblecoders.stationary.ui.viewmodel.HomeViewModel
 import com.humblecoders.stationary.ui.viewmodel.MainViewModel
+import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class)
 @Composable
 fun HomeScreen(
     mainViewModel: MainViewModel,
@@ -27,11 +43,30 @@ fun HomeScreen(
 ) {
     val mainUiState by mainViewModel.uiState.collectAsState()
     val homeUiState by homeViewModel.uiState.collectAsState()
+    val coroutineScope = rememberCoroutineScope()
+    val pullRefreshState = rememberPullRefreshState(
+        refreshing = homeUiState.isLoading,
+        onRefresh = {
+            coroutineScope.launch {
+                homeViewModel.refreshOrders()
+            }
+        }
+    )
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Print Shop") }
+                title = { Text("Print Shop") },
+                actions = {
+                    if (homeUiState.orders.isNotEmpty()) {
+                        IconButton(onClick = { homeViewModel.refreshOrders() }) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Refresh Orders"
+                            )
+                        }
+                    }
+                }
             )
         },
         floatingActionButton = {
@@ -44,81 +79,220 @@ fun HomeScreen(
             }
         }
     ) { paddingValues ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(16.dp)
+                .pullRefresh(pullRefreshState)
         ) {
-            if (!homeUiState.isShopOpen) {
-                ShopClosedCard(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 16.dp)
-                )
-            }
-
-            if (homeUiState.isLoading) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+            ) {
+                if (!homeUiState.isShopOpen) {
+                    ShopClosedCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 16.dp)
+                    )
                 }
-            } else {
-                if (homeUiState.orders.isEmpty()) {
+
+                // Status bar showing shop status
+                AnimatedVisibility(
+                    visible = homeUiState.isShopOpen,
+                    enter = fadeIn(),
+                    exit = fadeOut()
+                ) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Green)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Shop is open and ready to process your print orders",
+                                fontSize = 14.sp,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+                }
+
+                if (homeUiState.isLoading && homeUiState.orders.isEmpty()) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator()
+                            Spacer(modifier = Modifier.height(16.dp))
                             Text(
-                                text = "No orders yet",
-                                fontSize = 18.sp,
+                                text = "Loading your orders...",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            if (homeUiState.isShopOpen) {
-                                Text(
-                                    text = "Tap + to upload your first document",
-                                    fontSize = 14.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(top = 8.dp)
-                                )
-                            }
                         }
                     }
                 } else {
-                    Text(
-                        text = "Your Orders",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 16.dp)
-                    )
+                    if (homeUiState.orders.isEmpty()) {
+                        EmptyOrdersPlaceholder(
+                            isShopOpen = homeUiState.isShopOpen,
+                            onNavigateToUpload = onNavigateToUpload
+                        )
+                    } else {
+                        OrdersListSection(
+                            orders = homeUiState.orders,
+                            onOrderClick = { /* Handle order click */ }
+                        )
+                    }
+                }
 
-                    LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                // Error display
+                homeUiState.error?.let { error ->
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 16.dp)
                     ) {
-                        items(homeUiState.orders) { order ->
-                            OrderCard(order = order)
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Outlined.Info,
+                                contentDescription = "Error",
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = error,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
                         }
                     }
                 }
             }
 
-            homeUiState.error?.let { error ->
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 16.dp)
+            PullRefreshIndicator(
+                refreshing = homeUiState.isLoading,
+                state = pullRefreshState,
+                modifier = Modifier.align(Alignment.TopCenter)
+            )
+        }
+    }
+}
+
+@Composable
+private fun EmptyOrdersPlaceholder(
+    isShopOpen: Boolean,
+    onNavigateToUpload: () -> Unit
+) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(24.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Print,
+                contentDescription = null,
+                modifier = Modifier.size(72.dp),
+                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
+                text = "No Print Orders Yet",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Your print history will appear here once you upload documents for printing.",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 24.dp)
+            )
+
+            if (isShopOpen) {
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Button(
+                    onClick = onNavigateToUpload,
+                    modifier = Modifier.padding(horizontal = 24.dp)
                 ) {
-                    Text(
-                        text = error,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                        modifier = Modifier.padding(16.dp)
-                    )
+                    Icon(Icons.Default.Add, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Upload Document")
                 }
             }
         }
     }
 }
+
+@Composable
+private fun OrdersListSection(
+    orders: List<PrintOrder>,
+    onOrderClick: (PrintOrder) -> Unit
+) {
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = "Your Orders",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 8.dp, top = 8.dp)
+            )
+
+            Text(
+                text = "${orders.size} ${if (orders.size == 1) "order" else "orders"}",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(vertical = 8.dp)
+        ) {
+            items(
+                items = orders,
+                key = { it.orderId }
+            ) { order ->
+                OrderCard(
+                    order = order,
+                    onClick = { onOrderClick(order) }
+                )
+            }
+        }
+    }
+}
+
