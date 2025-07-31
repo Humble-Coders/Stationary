@@ -30,7 +30,7 @@ data class PrintOrder(
     val queuePriority: Int = 0,
 
     @PropertyName("isInQueue")
-    val isInQueue: Boolean = false,
+    val inQueue: Boolean = false,
 
     val createdAt: Timestamp = Timestamp.now(),
     val updatedAt: Timestamp = Timestamp.now()
@@ -54,7 +54,7 @@ data class PrintOrder(
         isPaid = false,
         canAutoPrint = false,
         queuePriority = 0,
-        isInQueue = false,
+        inQueue = false,
         createdAt = Timestamp.now(),
         updatedAt = Timestamp.now()
     )

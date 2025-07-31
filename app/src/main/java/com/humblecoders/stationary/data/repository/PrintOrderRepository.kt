@@ -56,7 +56,6 @@ class PrintOrderRepository {
             "isPaid" to isPaid,  // Explicit boolean
             "canAutoPrint" to canAutoPrint,
             "queuePriority" to queuePriority,
-            "isInQueue" to isInQueue,
             "createdAt" to createdAt,
             "updatedAt" to updatedAt
         )
