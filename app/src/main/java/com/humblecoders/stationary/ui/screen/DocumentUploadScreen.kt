@@ -139,7 +139,8 @@ fun DocumentUploadScreen(
                 ) {
                     Button(
                         onClick = {
-                            val orderId = uiState.orderId
+                            var orderId = uiState.orderId
+                            orderId="123"
                             if (orderId != null) {
                                 onNavigateToPayment(orderId, uiState.calculatedPrice, uiState.customerPhone)
                             }

@@ -14,8 +14,10 @@ import com.humblecoders.stationary.data.service.RazorpayService
 import com.humblecoders.stationary.navigation.PrintShopNavigation
 import com.humblecoders.stationary.ui.theme.StationaryTheme
 import com.humblecoders.stationary.ui.viewmodel.*
+import com.razorpay.PaymentData
+import com.razorpay.PaymentResultWithDataListener
 
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(),PaymentResultWithDataListener {
 
     private lateinit var printOrderRepository: PrintOrderRepository
     private lateinit var shopSettingsRepository: ShopSettingsRepository
@@ -26,6 +28,18 @@ class MainActivity : ComponentActivity() {
     private lateinit var documentUploadViewModel: DocumentUploadViewModel
     private lateinit var paymentViewModel: PaymentViewModel
     private lateinit var customerInfoViewModel: CustomerInfoViewModel
+
+    override fun onPaymentSuccess(razorpayPaymentId: String?, paymentData: PaymentData) {
+        // Handle successful payment
+        razorpayPaymentId?.let { paymentId ->
+            paymentViewModel.handlePaymentSuccess(paymentId, paymentData)
+        }
+    }
+
+    override fun onPaymentError(errorCode: Int, response: String?, paymentData: PaymentData?) {
+        // Handle payment error
+        paymentViewModel.handlePaymentError(errorCode, response ?: "Payment failed")
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -74,4 +88,5 @@ class MainActivity : ComponentActivity() {
             activity = this@MainActivity
         )
     }
+
 }

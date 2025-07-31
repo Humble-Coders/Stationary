@@ -271,11 +271,21 @@ fun PrintSettingsCard(
                 }
 
                 if (settings.pagesToPrint == PageSelection.CUSTOM) {
+                    val isValidRange = remember(settings.customPages) {
+                        isValidPageRange(settings.customPages)
+                    }
+
                     OutlinedTextField(
                         value = settings.customPages,
                         onValueChange = { onSettingsChange(settings.copy(customPages = it)) },
                         label = { Text("Custom Pages") },
                         placeholder = { Text("e.g., 1-3,5,7-10") },
+                        isError = settings.customPages.isNotEmpty() && !isValidRange,
+                        supportingText = {
+                            if (settings.customPages.isNotEmpty() && !isValidRange) {
+                                Text("Invalid page range format")
+                            }
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 8.dp)
@@ -530,3 +540,24 @@ fun PrintShopTheme(
     )
 }
 
+private fun isValidPageRange(pageRange: String): Boolean {
+    if (pageRange.isEmpty()) return true
+
+    try {
+        val parts = pageRange.split(",")
+        for (part in parts) {
+            val trimmed = part.trim()
+            if (trimmed.contains("-")) {
+                val range = trimmed.split("-")
+                if (range.size != 2) return false
+                range[0].trim().toInt()
+                range[1].trim().toInt()
+            } else {
+                trimmed.toInt()
+            }
+        }
+        return true
+    } catch (e: Exception) {
+        return false
+    }
+}

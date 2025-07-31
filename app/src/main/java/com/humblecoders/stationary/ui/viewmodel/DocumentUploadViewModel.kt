@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.humblecoders.stationary.data.model.PrintOrder
 import com.humblecoders.stationary.data.model.PrintSettings
+import com.humblecoders.stationary.data.model.ShopSettings
 import com.humblecoders.stationary.data.repository.PrintOrderRepository
 import com.humblecoders.stationary.data.repository.ShopSettingsRepository
 import com.humblecoders.stationary.util.FileUtils
@@ -51,17 +52,7 @@ class DocumentUploadViewModel(
         )
     }
 
-    private fun observeShopStatus() {
-        viewModelScope.launch {
-            try {
-                shopSettingsRepository.observeShopStatus().collect { isOpen ->
-                    _uiState.value = _uiState.value.copy(isShopOpen = isOpen)
-                }
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(error = e.message)
-            }
-        }
-    }
+
 
     fun selectFile(context: Context, uri: Uri) {
         if (!FileUtils.isValidPdfFile(context, uri)) {
@@ -71,26 +62,21 @@ class DocumentUploadViewModel(
 
         val fileName = FileUtils.getFileName(context, uri)
         val fileSize = FileUtils.getFileSize(context, uri)
-        val pageCount = estimatePageCount(fileSize)
-        val price = printOrderRepository.calculatePrice(_uiState.value.printSettings, pageCount)
+        val pageCount = FileUtils.getPdfPageCount(context, uri) // Use real PDF parsing
 
         _uiState.value = _uiState.value.copy(
             selectedFile = uri,
             fileName = fileName,
             fileSize = fileSize,
             pageCount = pageCount,
-            calculatedPrice = price,
             error = null
         )
+
+        // Recalculate price with new page count
+        recalculatePrice()
     }
 
-    fun updatePrintSettings(settings: PrintSettings) {
-        val price = printOrderRepository.calculatePrice(settings, _uiState.value.pageCount)
-        _uiState.value = _uiState.value.copy(
-            printSettings = settings,
-            calculatedPrice = price
-        )
-    }
+
 
     fun submitOrderWithoutPayment() {
         if (!_uiState.value.isShopOpen) {
@@ -210,5 +196,49 @@ class DocumentUploadViewModel(
             customerId = _uiState.value.customerId,
             customerPhone = _uiState.value.customerPhone
         )
+    }
+
+    // Add this property to DocumentUploadViewModel class
+    private var currentShopSettings: ShopSettings = ShopSettings()
+
+    // Update the observeShopStatus method
+    private fun observeShopStatus() {
+        viewModelScope.launch {
+            try {
+                shopSettingsRepository.observeShopSettings().collect { settings ->
+                    currentShopSettings = settings
+                    _uiState.value = _uiState.value.copy(isShopOpen = settings.shopOpen)
+
+                    // Recalculate price if file is selected
+                    if (_uiState.value.selectedFile != null) {
+                        recalculatePrice()
+                    }
+                }
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(error = e.message)
+            }
+        }
+    }
+
+    // Add this new method to DocumentUploadViewModel
+    private fun recalculatePrice() {
+        viewModelScope.launch {
+            try {
+                val price = printOrderRepository.calculatePrice(
+                    _uiState.value.printSettings,
+                    _uiState.value.pageCount,
+                    currentShopSettings
+                )
+                _uiState.value = _uiState.value.copy(calculatedPrice = price)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(error = "Price calculation failed: ${e.message}")
+            }
+        }
+    }
+
+    // Update the updatePrintSettings method
+    fun updatePrintSettings(settings: PrintSettings) {
+        _uiState.value = _uiState.value.copy(printSettings = settings)
+        recalculatePrice()
     }
 }

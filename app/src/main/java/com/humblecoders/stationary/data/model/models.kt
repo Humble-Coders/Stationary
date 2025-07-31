@@ -48,7 +48,7 @@ data class PricePerPage(
     val color: Double = 5.0
 )
 
-data class PaymentData(
+data class PaymentTransactionData(
     val razorpayOrderId: String,
     val razorpayPaymentId: String,
     val amount: Double
