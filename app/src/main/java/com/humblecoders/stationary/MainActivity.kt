@@ -125,7 +125,8 @@ class MainActivity : ComponentActivity(),PaymentResultWithDataListener {
             paymentViewModel = paymentViewModel,
             customerInfoViewModel = customerInfoViewModel,
             activity = this@MainActivity,
-            startDestination = startDestination.value
+            startDestination = startDestination.value,
+            userPreferencesRepository = userPreferencesRepository
         )
     }
 

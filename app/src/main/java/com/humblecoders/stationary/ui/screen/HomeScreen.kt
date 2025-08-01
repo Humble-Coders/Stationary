@@ -157,7 +157,8 @@ fun HomeScreen(
                     } else {
                         OrdersListSection(
                             orders = homeUiState.orders,
-                            onOrderClick = { /* Handle order click */ }
+                            onOrderClick = { /* Handle order click */ },
+                            viewModel = homeViewModel
                         )
                     }
                 }
@@ -257,7 +258,8 @@ private fun EmptyOrdersPlaceholder(
 @Composable
 private fun OrdersListSection(
     orders: List<PrintOrder>,
-    onOrderClick: (PrintOrder) -> Unit
+    onOrderClick: (PrintOrder) -> Unit,
+    viewModel: HomeViewModel
 ) {
     Column {
         Row(
@@ -289,7 +291,10 @@ private fun OrdersListSection(
             ) { order ->
                 OrderCard(
                     order = order,
-                    onClick = { onOrderClick(order) }
+                    onClick = { onOrderClick(order) },
+                    modifier = Modifier,
+                    getPaymentStatusDisplay = viewModel::getPaymentStatusDisplay,
+                    getOrderStatusDisplay = viewModel::getOrderStatusDisplay,
                 )
             }
         }

@@ -11,6 +11,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 
+enum class PaymentStatus {
+    PAID, PENDING
+}
+
+enum class OrderStatus {
+    SUBMITTED, QUEUED, PRINTED
+}
+
 data class HomeUiState(
     val orders: List<PrintOrder> = emptyList(),
     val isShopOpen: Boolean = true,
@@ -33,11 +41,14 @@ class HomeViewModel(
     }
 
     fun setCustomerId(customerId: String) {
-        _uiState.value = _uiState.value.copy(
-            customerId = customerId,
-            isCustomerIdSet = true
-        )
-        observeUserOrders()
+        if (customerId.isNotEmpty()) {
+            _uiState.value = _uiState.value.copy(
+                customerId = customerId,
+                isCustomerIdSet = true,
+                isLoading = true
+            )
+            observeUserOrders()
+        }
     }
 
     private fun observeShopStatus() {
@@ -52,7 +63,6 @@ class HomeViewModel(
                 .collect { isOpen ->
                     _uiState.value = _uiState.value.copy(
                         isShopOpen = isOpen,
-                        isLoading = false,
                         error = null
                     )
                 }
@@ -63,6 +73,8 @@ class HomeViewModel(
         if (_uiState.value.customerId.isEmpty()) return
 
         viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true)
+
             printOrderRepository.observeUserOrders(_uiState.value.customerId)
                 .catch { e ->
                     _uiState.value = _uiState.value.copy(
@@ -72,7 +84,7 @@ class HomeViewModel(
                 }
                 .collect { orders ->
                     _uiState.value = _uiState.value.copy(
-                        orders = orders.sortedByDescending { it.createdAt.toDate().time },
+                        orders = orders,
                         error = null,
                         isLoading = false
                     )
@@ -89,5 +101,21 @@ class HomeViewModel(
 
     fun clearError() {
         _uiState.value = _uiState.value.copy(error = null)
+    }
+
+    fun getPaymentStatusDisplay(order: PrintOrder): String {
+        return when (order.paymentStatus.toString()) {
+            "PAID" -> "Paid"
+            else -> "unknown"
+        }
+    }
+
+    fun getOrderStatusDisplay(order: PrintOrder): String {
+        return when (order.orderStatus.toString()) {
+            "SUBMITTED" -> "Submitted"
+            "QUEUED" -> "Queued"
+            "PRINTED" -> "Printed"
+            else -> "Unknown"
+        }
     }
 }

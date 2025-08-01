@@ -40,10 +40,13 @@ import java.util.Locale
 fun OrderCard(
     order: PrintOrder,
     onClick: (PrintOrder) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // Add these parameters to get status from ViewModel
+    getPaymentStatusDisplay: (PrintOrder) -> String,
+    getOrderStatusDisplay: (PrintOrder) -> String
 ) {
     val cardColor = getOrderCardColor(order)
-    val statusText = getOrderStatusText(order)
+    val statusText = getOrderStatusDisplay(order) // Use the actual order status
     val statusIcon = getOrderStatusIcon(order)
 
     val animatedColor by animateColorAsState(
@@ -131,6 +134,14 @@ fun OrderCard(
 
                     Spacer(modifier = Modifier.height(4.dp))
 
+                    // Show payment status
+                    OrderDetail(
+                        label = "Payment",
+                        value = getPaymentStatusDisplay(order)
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
                     order.printSettings?.let { settings ->
                         OrderDetail(
                             label = "Print Settings",
@@ -149,7 +160,7 @@ fun OrderCard(
                             text = "₹${String.format("%.2f", order.paymentAmount)}",
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (order.isPaid)
+                            color = if (getPaymentStatusDisplay(order) == "Paid")
                                 MaterialTheme.colorScheme.primary
                             else
                                 MaterialTheme.colorScheme.onSurface
@@ -164,8 +175,11 @@ fun OrderCard(
                 }
             }
 
-            // Action indicators (only show if needed)
-            if (!order.isPaid || !order.hasSettings) {
+            // Action indicators - update logic based on actual status
+            val isPaid = getPaymentStatusDisplay(order) == "Paid"
+            val hasSettings = order.printSettings != null
+
+            if (!isPaid || !hasSettings) {
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Row(
@@ -188,9 +202,9 @@ fun OrderCard(
                     Spacer(modifier = Modifier.width(8.dp))
 
                     Text(
-                        text = if (!order.isPaid && !order.hasSettings) {
+                        text = if (!isPaid && !hasSettings) {
                             "Payment and print settings needed"
-                        } else if (!order.isPaid) {
+                        } else if (!isPaid) {
                             "Payment needed to proceed"
                         } else {
                             "Configure print settings"
@@ -202,6 +216,52 @@ fun OrderCard(
                 }
             }
         }
+    }
+}
+
+// Update these helper functions to use actual enum values
+private fun getOrderCardColor(order: PrintOrder): Color {
+    return when (order.orderStatus.toString()) {
+        "PRINTED" -> Color(0xFF4CAF50).copy(alpha = 0.05f) // Green
+        "QUEUED" -> Color(0xFF2196F3).copy(alpha = 0.05f) // Blue
+        "SUBMITTED" -> Color(0xFFFF9800).copy(alpha = 0.05f) // Orange
+        else -> Color(0xFFF44336).copy(alpha = 0.05f) // Red
+    }
+}
+
+private fun getStatusChipColor(order: PrintOrder): Color {
+    return when (order.orderStatus.toString()) {
+        "PRINTED" -> Color(0xFF4CAF50) // Green
+        "QUEUED" -> Color(0xFF2196F3) // Blue
+        "SUBMITTED" -> Color(0xFFFF9800) // Orange
+        else -> Color(0xFFF44336) // Red
+    }
+}
+
+private fun getStatusIconBackgroundColor(order: PrintOrder): Color {
+    return when (order.orderStatus.toString()) {
+        "PRINTED" -> Color(0xFF4CAF50).copy(alpha = 0.2f)
+        "QUEUED" -> Color(0xFF2196F3).copy(alpha = 0.2f)
+        "SUBMITTED" -> Color(0xFFFF9800).copy(alpha = 0.2f)
+        else -> Color(0xFFF44336).copy(alpha = 0.2f)
+    }
+}
+
+private fun getStatusIconColor(order: PrintOrder): Color {
+    return when (order.orderStatus.toString()) {
+        "PRINTED" -> Color(0xFF4CAF50)
+        "QUEUED" -> Color(0xFF2196F3)
+        "SUBMITTED" -> Color(0xFFFF9800)
+        else -> Color(0xFFF44336)
+    }
+}
+
+private fun getOrderStatusIcon(order: PrintOrder): ImageVector {
+    return when (order.orderStatus.toString()) {
+        "PRINTED" -> Icons.Outlined.CheckCircle
+        "QUEUED" -> Icons.Outlined.Description
+        "SUBMITTED" -> Icons.Outlined.Payments
+        else -> Icons.Outlined.Settings
     }
 }
 
@@ -245,51 +305,7 @@ private fun StatusChip(
     }
 }
 
-private fun getOrderCardColor(order: PrintOrder): Color {
-    return when {
-        order.orderStatus == OrderStatus.COMPLETED -> Color(0xFF4CAF50).copy(alpha = 0.05f) // Green
-        order.hasSettings && order.isPaid -> Color(0xFF2196F3).copy(alpha = 0.05f) // Blue
-        order.hasSettings && !order.isPaid -> Color(0xFFFF9800).copy(alpha = 0.05f) // Orange
-        !order.hasSettings && order.isPaid -> Color(0xFFFF5722).copy(alpha = 0.05f) // Deep Orange
-        else -> Color(0xFFF44336).copy(alpha = 0.05f) // Red
-    }
-}
 
-private fun getStatusChipColor(order: PrintOrder): Color {
-    return when {
-        order.orderStatus == OrderStatus.COMPLETED -> Color(0xFF4CAF50) // Green
-        order.orderStatus == OrderStatus.PRINTING -> Color(0xFF2196F3) // Blue
-        order.orderStatus == OrderStatus.QUEUED -> Color(0xFF9C27B0) // Purple
-        order.hasSettings && order.isPaid -> Color(0xFF2196F3) // Blue
-        order.hasSettings && !order.isPaid -> Color(0xFFFF9800) // Orange
-        !order.hasSettings && order.isPaid -> Color(0xFFFF5722) // Deep Orange
-        else -> Color(0xFFF44336) // Red
-    }
-}
-
-private fun getStatusIconBackgroundColor(order: PrintOrder): Color {
-    return when {
-        order.orderStatus == OrderStatus.COMPLETED -> Color(0xFF4CAF50).copy(alpha = 0.2f)
-        order.orderStatus == OrderStatus.PRINTING -> Color(0xFF2196F3).copy(alpha = 0.2f)
-        order.orderStatus == OrderStatus.QUEUED -> Color(0xFF9C27B0).copy(alpha = 0.2f)
-        order.hasSettings && order.isPaid -> Color(0xFF2196F3).copy(alpha = 0.2f)
-        order.hasSettings && !order.isPaid -> Color(0xFFFF9800).copy(alpha = 0.2f)
-        !order.hasSettings && order.isPaid -> Color(0xFFFF5722).copy(alpha = 0.2f)
-        else -> Color(0xFFF44336).copy(alpha = 0.2f)
-    }
-}
-
-private fun getStatusIconColor(order: PrintOrder): Color {
-    return when {
-        order.orderStatus == OrderStatus.COMPLETED -> Color(0xFF4CAF50)
-        order.orderStatus == OrderStatus.PRINTING -> Color(0xFF2196F3)
-        order.orderStatus == OrderStatus.QUEUED -> Color(0xFF9C27B0)
-        order.hasSettings && order.isPaid -> Color(0xFF2196F3)
-        order.hasSettings && !order.isPaid -> Color(0xFFFF9800)
-        !order.hasSettings && order.isPaid -> Color(0xFFFF5722)
-        else -> Color(0xFFF44336)
-    }
-}
 
 private fun getOrderStatusText(order: PrintOrder): String {
     return when {
@@ -303,15 +319,6 @@ private fun getOrderStatusText(order: PrintOrder): String {
     }
 }
 
-private fun getOrderStatusIcon(order: PrintOrder): ImageVector {
-    return when {
-        order.orderStatus == OrderStatus.COMPLETED -> Icons.Outlined.CheckCircle
-        order.orderStatus == OrderStatus.PRINTING || order.orderStatus == OrderStatus.QUEUED -> Icons.Outlined.Description
-        order.hasSettings && !order.isPaid -> Icons.Outlined.Payments
-        !order.hasSettings -> Icons.Outlined.Settings
-        else -> Icons.Outlined.Description
-    }
-}
 
 private fun formatDate(date: Date): String {
     val formatter = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())

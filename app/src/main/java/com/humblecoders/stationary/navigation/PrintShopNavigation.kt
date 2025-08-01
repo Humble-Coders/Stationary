@@ -1,13 +1,15 @@
 package com.humblecoders.stationary.navigation
 
-
 import android.app.Activity
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import com.humblecoders.stationary.data.repository.UserPreferencesRepository
 import com.humblecoders.stationary.ui.screen.*
 import com.humblecoders.stationary.ui.viewmodel.*
+import kotlinx.coroutines.launch
 
 sealed class Screen(val route: String) {
     object CustomerInfo : Screen("customer_info")
@@ -29,9 +31,11 @@ fun PrintShopNavigation(
     paymentViewModel: PaymentViewModel,
     customerInfoViewModel: CustomerInfoViewModel,
     activity: Activity,
-    startDestination: String = Screen.CustomerInfo.route
-
+    startDestination: String = Screen.CustomerInfo.route,
+    userPreferencesRepository: UserPreferencesRepository // Add this parameter
 ) {
+    val coroutineScope = rememberCoroutineScope() // Add this for launching coroutines
+
     NavHost(
         navController = navController,
         startDestination = startDestination
@@ -40,6 +44,11 @@ fun PrintShopNavigation(
             CustomerInfoScreen(
                 viewModel = customerInfoViewModel,
                 onCustomerInfoSubmitted = { customerId, customerPhone ->
+                    // Save customer info to preferences
+                    coroutineScope.launch {
+                        userPreferencesRepository.saveCustomerInfo(customerId, customerPhone)
+                    }
+
                     homeViewModel.setCustomerId(customerId)
                     documentUploadViewModel.setCustomerInfo(customerId, customerPhone)
                     navController.navigate(Screen.Home.route) {
