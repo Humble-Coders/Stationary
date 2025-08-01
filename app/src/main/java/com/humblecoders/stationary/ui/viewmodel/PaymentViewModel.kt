@@ -38,6 +38,11 @@ class PaymentViewModel(
         _uiState.value = PaymentUiState()
     }
 
+    fun clearState() {
+        _uiState.value = PaymentUiState()
+        currentPaymentAmount = 0.0
+    }
+
 
     private fun extractOrderIdFromPaymentData(paymentData: PaymentData): String {
         // Extract order ID from payment data if available
@@ -135,6 +140,10 @@ class PaymentViewModel(
                     isProcessing = false,
                     isSuccess = true
                 )
+
+                // Clear state after short delay to show success message
+                kotlinx.coroutines.delay(1500)
+                clearState()
 
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(

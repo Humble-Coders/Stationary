@@ -4,7 +4,6 @@ package com.humblecoders.stationary.util
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
-import java.io.File
 
 object FileUtils {
 
@@ -45,42 +44,17 @@ object FileUtils {
 
     // Add these methods to FileUtils.kt
 
-    fun getPdfPageCount(context: Context, uri: Uri): Int {
+    fun getPdfPageCount(context: Context, uri: Uri): Int? {
         return try {
-            context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                val buffer = ByteArray(1024)
-                var pageCount = 0
-                var totalRead = 0
-                val maxReadBytes = 50 * 1024 // Read first 50KB to find page count
-
-                while (totalRead < maxReadBytes) {
-                    val bytesRead = inputStream.read(buffer)
-                    if (bytesRead == -1) break
-
-                    val content = String(buffer, 0, bytesRead)
-                    // Simple regex to count /Type /Page occurrences
-                    val pageMatches = Regex("/Type\\s*/Page[^s]").findAll(content)
-                    pageCount += pageMatches.count()
-
-                    totalRead += bytesRead
+            context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                android.graphics.pdf.PdfRenderer(pfd).use { renderer ->
+                    renderer.pageCount
                 }
-
-                // Fallback to file size estimation if no pages found
-                if (pageCount == 0) {
-                    val fileSize = getFileSize(context, uri)
-                    pageCount = estimatePageCountFromSize(fileSize)
-                }
-
-                pageCount.coerceAtLeast(1)
-            } ?: estimatePageCountFromSize(getFileSize(context, uri))
+            }
         } catch (e: Exception) {
-            // Fallback to size estimation
-            estimatePageCountFromSize(getFileSize(context, uri))
+            android.util.Log.w("PDF_UTILS", "Cannot read PDF: ${e.message}")
+            null // Return null when PDF cannot be read
         }
     }
 
-    private fun estimatePageCountFromSize(fileSize: Long): Int {
-        val avgBytesPerPage = 100_000L
-        return (fileSize / avgBytesPerPage).toInt().coerceAtLeast(1)
-    }
 }

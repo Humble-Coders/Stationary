@@ -97,6 +97,9 @@ fun PrintShopNavigation(
                     navController.popBackStack()
                 },
                 onPaymentSuccess = {
+                    documentUploadViewModel.clearState()
+                    paymentViewModel.clearState()
+
                     navController.navigate(Screen.Home.route) {
                         popUpTo(Screen.DocumentUpload.route) { inclusive = true }
                     }

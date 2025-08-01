@@ -22,6 +22,8 @@ data class DocumentUploadUiState(
     val fileName: String = "",
     val fileSize: Long = 0,
     val pageCount: Int = 0,
+    val needsUserPageInput: Boolean = false,
+    val userInputPageCount: Int = 0,
     val printSettings: PrintSettings = PrintSettings(),
     val calculatedPrice: Double = 0.0,
     val isUploading: Boolean = false,
@@ -62,13 +64,29 @@ class DocumentUploadViewModel(
         val fileSize = FileUtils.getFileSize(context, uri)
         val pageCount = FileUtils.getPdfPageCount(context, uri)
 
-        _uiState.value = _uiState.value.copy(
-            selectedFile = uri,
-            fileName = fileName,
-            fileSize = fileSize,
-            pageCount = pageCount,
-            error = null
-        )
+        if (pageCount != null && pageCount > 0) {
+            // Success - use detected page count
+            _uiState.value = _uiState.value.copy(
+                selectedFile = uri,
+                fileName = fileName,
+                fileSize = fileSize,
+                pageCount = pageCount,
+                needsUserPageInput = false,
+                userInputPageCount = 0,
+                error = null
+            )
+        } else {
+            // Failed - ask user for page count
+            _uiState.value = _uiState.value.copy(
+                selectedFile = uri,
+                fileName = fileName,
+                fileSize = fileSize,
+                pageCount = 0,
+                needsUserPageInput = true,
+                userInputPageCount = 0,
+                error = null
+            )
+        }
 
         recalculatePrice()
     }
@@ -90,6 +108,17 @@ class DocumentUploadViewModel(
             return
         }
 
+        val finalPageCount = if (_uiState.value.needsUserPageInput && _uiState.value.userInputPageCount > 0) {
+            _uiState.value.userInputPageCount
+        } else {
+            _uiState.value.pageCount
+        }
+
+        if (finalPageCount <= 0) {
+            _uiState.value = _uiState.value.copy(error = "Please enter the number of pages")
+            return
+        }
+
         viewModelScope.launch {
             try {
                 _uiState.value = _uiState.value.copy(isUploading = true, error = null)
@@ -102,7 +131,7 @@ class DocumentUploadViewModel(
                     documentName = _uiState.value.fileName,
                     documentUrl = documentUrl,
                     documentSize = _uiState.value.fileSize,
-                    pageCount = _uiState.value.pageCount,
+                    pageCount = finalPageCount,
                     printSettings = _uiState.value.printSettings,
                     hasSettings = true,
                     isPaid = false,
@@ -242,6 +271,14 @@ class DocumentUploadViewModel(
         )
     }
 
+    fun clearState() {
+        _uiState.value = DocumentUploadUiState().copy(
+            isShopOpen = _uiState.value.isShopOpen,
+            customerId = _uiState.value.customerId,
+            customerPhone = _uiState.value.customerPhone
+        )
+    }
+
     private var currentShopSettings: ShopSettings = ShopSettings()
 
     private fun observeShopStatus() {
@@ -278,6 +315,14 @@ class DocumentUploadViewModel(
 
     fun updatePrintSettings(settings: PrintSettings) {
         _uiState.value = _uiState.value.copy(printSettings = settings)
+        recalculatePrice()
+    }
+
+    fun updateUserPageCount(pageCount: Int) {
+        _uiState.value = _uiState.value.copy(
+            userInputPageCount = pageCount,
+            pageCount = pageCount // Update the actual page count used for calculations
+        )
         recalculatePrice()
     }
 }

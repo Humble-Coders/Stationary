@@ -199,6 +199,37 @@ fun DocumentUploadScreen(
                             }
                         }
 
+                        // In DocumentUploadScreen.kt - Add this after file selection
+                        if (uiState.needsUserPageInput) {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 16.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Text(
+                                        text = "Unable to detect page count automatically",
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    OutlinedTextField(
+                                        value = uiState.userInputPageCount.toString().takeIf { it != "0" } ?: "",
+                                        onValueChange = { value ->
+                                            val pages = value.toIntOrNull()?.coerceAtLeast(1) ?: 0
+                                            viewModel.updateUserPageCount(pages)
+                                        },
+                                        label = { Text("Number of pages") },
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                            }
+                        }
+
                         // Toggle for Print Settings
                         Row(
                             modifier = Modifier
