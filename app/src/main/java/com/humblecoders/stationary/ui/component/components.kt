@@ -66,47 +66,54 @@ fun OrderCard(
         Column(
             modifier = Modifier.padding(16.dp)
         ) {
-            // Status Row
+            // Header Row - Icon and Document Info
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(getStatusIconBackgroundColor(order)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = statusIcon,
-                            contentDescription = null,
-                            tint = getStatusIconColor(order),
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(12.dp))
-
-                    Column {
-                        Text(
-                            text = order.documentName,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-
-                        Text(
-                            text = "Order ID: ${order.orderId.take(8)}...",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(getStatusIconBackgroundColor(order)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = statusIcon,
+                        contentDescription = null,
+                        tint = getStatusIconColor(order),
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
 
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column(
+                    modifier = Modifier.weight(1f) // Take remaining space
+                ) {
+                    Text(
+                        text = order.documentName,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2, // Allow 2 lines for longer names
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    Text(
+                        text = "Order ID: ${order.orderId.take(8)}...",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Status Chip - Separate row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Start
+            ) {
                 StatusChip(
                     text = statusText,
                     color = getStatusChipColor(order)
@@ -218,7 +225,6 @@ fun OrderCard(
         }
     }
 }
-
 // Update these helper functions to use actual enum values
 private fun getOrderCardColor(order: PrintOrder): Color {
     return when (order.orderStatus.toString()) {
@@ -307,17 +313,6 @@ private fun StatusChip(
 
 
 
-private fun getOrderStatusText(order: PrintOrder): String {
-    return when {
-        order.orderStatus == OrderStatus.COMPLETED -> "Completed"
-        order.orderStatus == OrderStatus.PRINTING -> "Printing"
-        order.orderStatus == OrderStatus.QUEUED -> "In Queue"
-        order.hasSettings && order.isPaid -> "Ready to Print"
-        order.hasSettings && !order.isPaid -> "Payment Pending"
-        !order.hasSettings && order.isPaid -> "Settings Needed"
-        else -> "Action Required"
-    }
-}
 
 
 private fun formatDate(date: Date): String {

@@ -121,7 +121,7 @@ enum class PaymentStatus {
 }
 
 enum class OrderStatus {
-    SUBMITTED, QUEUED, PRINTING, COMPLETED, CANCELLED
+    SUBMITTED, QUEUED, PRINTED
 }
 
 

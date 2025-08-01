@@ -1,5 +1,6 @@
 package com.humblecoders.stationary.ui.viewmodel
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.humblecoders.stationary.data.model.PrintOrder
@@ -11,13 +12,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 
-enum class PaymentStatus {
-    PAID, PENDING
-}
-
-enum class OrderStatus {
-    SUBMITTED, QUEUED, PRINTED
-}
 
 data class HomeUiState(
     val orders: List<PrintOrder> = emptyList(),
@@ -76,17 +70,23 @@ class HomeViewModel(
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
 
             try {
+                Log.d("HomeViewModel", "Observing orders for customer ID: ${_uiState.value.customerId}")
                 printOrderRepository.observeUserOrders(_uiState.value.customerId)
                     .collect { orders ->
+
                         _uiState.value = _uiState.value.copy(
                             orders = orders,
                             error = null,
                             isLoading = false
                         )
+                        Log.d("HomeViewModel","${_uiState.value.orders}")
+
                     }
             } catch (e: Exception) {
                 // Only show error if we don't have existing orders
                 val currentOrders = _uiState.value.orders
+                Log.d("HomeViewModel","${_uiState.value.orders}")
+
                 if (currentOrders.isEmpty()) {
                     _uiState.value = _uiState.value.copy(
                         error = "Failed to load orders: ${e.message}",
@@ -128,4 +128,5 @@ class HomeViewModel(
             else -> "Unknown"
         }
     }
+
 }

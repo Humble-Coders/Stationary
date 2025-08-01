@@ -1,8 +1,8 @@
 package com.humblecoders.stationary.data.repository
 
 import android.net.Uri
+import android.util.Log
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.snapshots
 import com.google.firebase.storage.FirebaseStorage
 import com.humblecoders.stationary.data.model.ColorMode
@@ -88,7 +88,7 @@ class PrintOrderRepository(firestore: FirebaseFirestore, storage: FirebaseStorag
     fun observeUserOrders(customerId: String): Flow<List<PrintOrder>> {
         return ordersCollection
             .whereEqualTo("customerId", customerId)
-            .snapshots() // Remove orderBy temporarily
+            .snapshots()
             .map { snapshot ->
                 try {
                     snapshot.documents.mapNotNull { doc ->

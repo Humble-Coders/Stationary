@@ -15,6 +15,7 @@ sealed class Screen(val route: String) {
     object CustomerInfo : Screen("customer_info")
     object Home : Screen("home")
     object DocumentUpload : Screen("document_upload")
+    object OrderHistory : Screen("order_history")
     object Payment : Screen("payment/{orderId}/{amount}/{customerPhone}") {
         fun createRoute(orderId: String, amount: Double, customerPhone: String): String {
             return "payment/$orderId/$amount/$customerPhone"
@@ -64,6 +65,9 @@ fun PrintShopNavigation(
                 homeViewModel = homeViewModel,
                 onNavigateToUpload = {
                     navController.navigate(Screen.DocumentUpload.route)
+                },
+                onNavigateToOrderHistory = {
+                    navController.navigate(Screen.OrderHistory.route)
                 }
             )
         }
@@ -103,6 +107,15 @@ fun PrintShopNavigation(
                     navController.navigate(Screen.Home.route) {
                         popUpTo(Screen.DocumentUpload.route) { inclusive = true }
                     }
+                }
+            )
+        }
+        // Add this inside NavHost
+        composable(Screen.OrderHistory.route) {
+            OrderHistoryScreen(
+                viewModel = homeViewModel,
+                onNavigateBack = {
+                    navController.popBackStack()
                 }
             )
         }

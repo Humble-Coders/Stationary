@@ -1,8 +1,10 @@
 package com.humblecoders.stationary.ui.screen
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -11,7 +13,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Segment
+import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Print
 import androidx.compose.material.pullrefresh.PullRefreshIndicator
@@ -39,11 +45,19 @@ import kotlinx.coroutines.launch
 fun HomeScreen(
     mainViewModel: MainViewModel,
     homeViewModel: HomeViewModel,
-    onNavigateToUpload: () -> Unit
+    onNavigateToUpload: () -> Unit,
+    onNavigateToOrderHistory : () -> Unit
 ) {
     val mainUiState by mainViewModel.uiState.collectAsState()
     val homeUiState by homeViewModel.uiState.collectAsState()
     val coroutineScope = rememberCoroutineScope()
+
+    // Filter orders to show only SUBMITTED and QUEUED
+    val activeOrders = homeUiState.orders.filter { order ->
+        order.orderStatus.toString() == "SUBMITTED" ||
+                order.orderStatus.toString() == "QUEUED"
+    }
+
     val pullRefreshState = rememberPullRefreshState(
         refreshing = homeUiState.isLoading,
         onRefresh = {
@@ -69,15 +83,60 @@ fun HomeScreen(
                 }
             )
         },
+        // Replace the existing FloatingActionButton with this
         floatingActionButton = {
             if (homeUiState.isShopOpen) {
-                FloatingActionButton(
-                    onClick = onNavigateToUpload
+                var expanded by remember { mutableStateOf(false) }
+
+                Column(
+                    horizontalAlignment = Alignment.End
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "Upload Document")
+                    AnimatedVisibility(
+                        visible = expanded,
+                        enter = fadeIn() + expandVertically(),
+                        exit = fadeOut() + shrinkVertically()
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.End,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // History FAB
+                            SmallFloatingActionButton(
+                                onClick = {
+                                    expanded = false
+                                    onNavigateToOrderHistory()
+                                },
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer
+                            ) {
+                                Icon(Icons.Outlined.History, contentDescription = "Order History")
+                            }
+
+                            // Upload FAB
+                            SmallFloatingActionButton(
+                                onClick = {
+                                    expanded = false
+                                    onNavigateToUpload()
+                                }
+                            ) {
+                                Icon(Icons.Default.Upload, contentDescription = "Upload Document")
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    FloatingActionButton(
+                        onClick = { expanded = !expanded }
+                    ) {
+                        Icon(
+                            imageVector = if (expanded) Icons.Default.Close else Icons.Default.Segment,
+                            contentDescription = if (expanded) "Close" else "More Options"
+                        )
+                    }
                 }
             }
         }
+
     ) { paddingValues ->
         Box(
             modifier = Modifier
@@ -134,7 +193,7 @@ fun HomeScreen(
                     }
                 }
 
-                if (homeUiState.isLoading && homeUiState.orders.isEmpty()) {
+                if (homeUiState.isLoading && activeOrders.isEmpty()) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
@@ -149,14 +208,15 @@ fun HomeScreen(
                         }
                     }
                 } else {
-                    if (homeUiState.orders.isEmpty()) {
+                    if (activeOrders.isEmpty()) {
                         EmptyOrdersPlaceholder(
                             isShopOpen = homeUiState.isShopOpen,
-                            onNavigateToUpload = onNavigateToUpload
+                            onNavigateToUpload = onNavigateToUpload,
+                            hasCompletedOrders = homeUiState.orders.isNotEmpty() // Show if there are any orders (even completed ones)
                         )
                     } else {
                         OrdersListSection(
-                            orders = homeUiState.orders,
+                            orders = activeOrders, // Use filtered orders
                             onOrderClick = { /* Handle order click */ },
                             viewModel = homeViewModel
                         )
@@ -203,7 +263,8 @@ fun HomeScreen(
 @Composable
 private fun EmptyOrdersPlaceholder(
     isShopOpen: Boolean,
-    onNavigateToUpload: () -> Unit
+    onNavigateToUpload: () -> Unit,
+    hasCompletedOrders: Boolean = false
 ) {
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -223,7 +284,7 @@ private fun EmptyOrdersPlaceholder(
             Spacer(modifier = Modifier.height(24.dp))
 
             Text(
-                text = "No Print Orders Yet",
+                text = if (hasCompletedOrders) "No Active Orders" else "No Print Orders Yet",
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -232,7 +293,10 @@ private fun EmptyOrdersPlaceholder(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "Your print history will appear here once you upload documents for printing.",
+                text = if (hasCompletedOrders)
+                    "You don't have any pending orders. Check your order history to see completed orders."
+                else
+                    "Your print history will appear here once you upload documents for printing.",
                 fontSize = 14.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
