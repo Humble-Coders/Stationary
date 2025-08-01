@@ -8,8 +8,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 
-class ShopSettingsRepository {
-    private val firestore = FirebaseFirestore.getInstance()
+class ShopSettingsRepository(firestore : FirebaseFirestore) {
     private val settingsDoc = firestore.collection("shop_settings").document("default")
 
     fun observeShopSettings(): Flow<ShopSettings> {

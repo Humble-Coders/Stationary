@@ -11,6 +11,8 @@ import androidx.compose.runtime.remember
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.ComposeNavigator
 import androidx.navigation.compose.DialogNavigator
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.storage.FirebaseStorage
 import com.humblecoders.stationary.data.repository.PrintOrderRepository
 import com.humblecoders.stationary.data.repository.ShopSettingsRepository
 import com.humblecoders.stationary.data.repository.UserPreferencesRepository
@@ -23,8 +25,11 @@ import com.razorpay.PaymentResultWithDataListener
 
 class MainActivity : ComponentActivity(),PaymentResultWithDataListener {
 
+    private lateinit var firestore: FirebaseFirestore
+    private lateinit var storage: FirebaseStorage
     private lateinit var printOrderRepository: PrintOrderRepository
     private lateinit var shopSettingsRepository: ShopSettingsRepository
+    private lateinit var userPreferencesRepository: UserPreferencesRepository
     private lateinit var razorpayService: RazorpayService
 
     private lateinit var mainViewModel: MainViewModel
@@ -32,7 +37,6 @@ class MainActivity : ComponentActivity(),PaymentResultWithDataListener {
     private lateinit var documentUploadViewModel: DocumentUploadViewModel
     private lateinit var paymentViewModel: PaymentViewModel
     private lateinit var customerInfoViewModel: CustomerInfoViewModel
-    private lateinit var userPreferencesRepository: UserPreferencesRepository
 
 
     override fun onPaymentSuccess(razorpayPaymentId: String?, paymentData: PaymentData) {
@@ -49,7 +53,7 @@ class MainActivity : ComponentActivity(),PaymentResultWithDataListener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
+        initializeFirebase()
         initializeRepositories()
         initializeViewModels()
 
@@ -60,9 +64,14 @@ class MainActivity : ComponentActivity(),PaymentResultWithDataListener {
         }
     }
 
+    private fun initializeFirebase() {
+        firestore = FirebaseFirestore.getInstance()
+        storage = FirebaseStorage.getInstance()
+    }
+
     private fun initializeRepositories() {
-        printOrderRepository = PrintOrderRepository()
-        shopSettingsRepository = ShopSettingsRepository()
+        printOrderRepository = PrintOrderRepository(firestore, storage)
+        shopSettingsRepository = ShopSettingsRepository(firestore)
         razorpayService = RazorpayService()
         userPreferencesRepository = UserPreferencesRepository(this)
 

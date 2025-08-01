@@ -13,13 +13,12 @@ import com.humblecoders.stationary.data.model.PrintOrder
 import com.humblecoders.stationary.data.model.PrintSettings
 import com.humblecoders.stationary.data.model.ShopSettings
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import java.util.*
 
-class PrintOrderRepository {
-    private val firestore = FirebaseFirestore.getInstance()
-    private val storage = FirebaseStorage.getInstance()
+class PrintOrderRepository(firestore: FirebaseFirestore, storage: FirebaseStorage) {
 
     private val ordersCollection = firestore.collection("print_orders")
     private val storageRef = storage.reference.child("documents")
@@ -53,7 +52,7 @@ class PrintOrderRepository {
             "razorpayPaymentId" to razorpayPaymentId,
             "orderStatus" to orderStatus,
             "hasSettings" to hasSettings,
-            "isPaid" to isPaid,  // Explicit boolean
+            "isPaid" to isPaid,  // Keep only this, remove "paid"
             "canAutoPrint" to canAutoPrint,
             "queuePriority" to queuePriority,
             "createdAt" to createdAt,
@@ -78,8 +77,7 @@ class PrintOrderRepository {
             "razorpayPaymentId" to paymentData.razorpayPaymentId,
             "paymentAmount" to paymentData.amount,
             "canAutoPrint" to true,
-            "updatedAt" to com.google.firebase.Timestamp.now(),
-            "paid" to true
+            "updatedAt" to com.google.firebase.Timestamp.now()
         )
 
         ordersCollection.document(orderId).update(updates).await()
@@ -90,12 +88,22 @@ class PrintOrderRepository {
     fun observeUserOrders(customerId: String): Flow<List<PrintOrder>> {
         return ordersCollection
             .whereEqualTo("customerId", customerId)
-            .orderBy("createdAt", Query.Direction.DESCENDING)
-            .snapshots()
+            .snapshots() // Remove orderBy temporarily
             .map { snapshot ->
-                snapshot.documents.mapNotNull { doc ->
-                    doc.toObject(PrintOrder::class.java)
+                try {
+                    snapshot.documents.mapNotNull { doc ->
+                        try {
+                            doc.toObject(PrintOrder::class.java)
+                        } catch (e: Exception) {
+                            null
+                        }
+                    }.sortedByDescending { it.createdAt.toDate() } // Sort in code instead
+                } catch (e: Exception) {
+                    emptyList()
                 }
+            }
+            .catch { e ->
+                emit(emptyList())
             }
     }
 

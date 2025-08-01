@@ -73,22 +73,32 @@ class HomeViewModel(
         if (_uiState.value.customerId.isEmpty()) return
 
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
 
-            printOrderRepository.observeUserOrders(_uiState.value.customerId)
-                .catch { e ->
+            try {
+                printOrderRepository.observeUserOrders(_uiState.value.customerId)
+                    .collect { orders ->
+                        _uiState.value = _uiState.value.copy(
+                            orders = orders,
+                            error = null,
+                            isLoading = false
+                        )
+                    }
+            } catch (e: Exception) {
+                // Only show error if we don't have existing orders
+                val currentOrders = _uiState.value.orders
+                if (currentOrders.isEmpty()) {
                     _uiState.value = _uiState.value.copy(
                         error = "Failed to load orders: ${e.message}",
                         isLoading = false
                     )
-                }
-                .collect { orders ->
+                } else {
+                    // Keep existing orders, just stop loading
                     _uiState.value = _uiState.value.copy(
-                        orders = orders,
-                        error = null,
                         isLoading = false
                     )
                 }
+            }
         }
     }
 

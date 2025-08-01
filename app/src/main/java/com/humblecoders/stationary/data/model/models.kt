@@ -35,29 +35,15 @@ data class PrintOrder(
     val createdAt: Timestamp = Timestamp.now(),
     val updatedAt: Timestamp = Timestamp.now()
 ) {
-    // No-arg constructor for Firestore
-    constructor() : this(
-        orderId = "",
-        customerId = "",
-        customerPhone = "",
-        documentName = "",
-        documentUrl = "",
-        documentSize = 0,
-        pageCount = 0,
-        printSettings = null,
-        paymentStatus = PaymentStatus.UNPAID,
-        paymentAmount = 0.0,
-        razorpayOrderId = "",
-        razorpayPaymentId = "",
-        orderStatus = OrderStatus.SUBMITTED,
-        hasSettings = false,
-        isPaid = false,
-        canAutoPrint = false,
-        queuePriority = 0,
-        inQueue = false,
-        createdAt = Timestamp.now(),
-        updatedAt = Timestamp.now()
-    )
+    // Add explicit getter for isPaid to fix Firestore mapping
+    @PropertyName("isPaid")
+    fun getIsPaid(): Boolean = isPaid
+
+    // Add explicit setter for isPaid
+    @PropertyName("isPaid")
+    fun setIsPaid(value: Boolean) {
+        // This is handled by the copy constructor
+    }
 }
 
 data class ShopSettings(
