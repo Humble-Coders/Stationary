@@ -62,7 +62,6 @@ dependencies {
     implementation(libs.firebase.analytics.ktx)
 
     // PDF Viewer
-    implementation("com.github.mhiew:android-pdf-viewer:3.2.0-beta.3")
     implementation ("androidx.navigation:navigation-compose:2.7.6")
     implementation("com.razorpay:checkout:1.6.33")
     implementation("androidx.datastore:datastore-preferences:1.0.0")
