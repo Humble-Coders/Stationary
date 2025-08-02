@@ -1,5 +1,8 @@
 package com.humblecoders.stationary.ui.screen
 
+import android.annotation.SuppressLint
+import android.graphics.Bitmap
+import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -9,6 +12,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -17,7 +21,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Upload
@@ -27,7 +32,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -36,11 +42,17 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.humblecoders.stationary.data.model.ColorMode
+import com.humblecoders.stationary.data.model.Orientation
 import com.humblecoders.stationary.data.model.PageSelection
-import com.humblecoders.stationary.data.model.PrintSettings
 import com.humblecoders.stationary.ui.component.ShopClosedCard
 import com.humblecoders.stationary.ui.viewmodel.DocumentUploadViewModel
+import android.graphics.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material3.HorizontalDivider
+import androidx.core.graphics.createBitmap
 
+@SuppressLint("DefaultLocale")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DocumentUploadScreen(
@@ -71,7 +83,7 @@ fun DocumentUploadScreen(
                 title = { Text("Upload Document") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
@@ -232,6 +244,52 @@ fun DocumentUploadScreen(
                             }
                         }
 
+                        // After the file selection card, add preview section
+
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 16.dp),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = "Document Preview",
+                                            fontSize = 16.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+
+                                        Switch(
+                                            checked = uiState.showPreview,
+                                            onCheckedChange = { viewModel.togglePreview() }
+                                        )
+                                    }
+
+                                    AnimatedVisibility(
+                                        visible = uiState.showPreview,
+                                        enter = fadeIn() + expandVertically(),
+                                        exit = fadeOut() + shrinkVertically()
+                                    ) {
+                                        PdfPreview(
+                                            uri = uiState.selectedFile!!,
+                                            currentPage = uiState.currentPreviewPage,
+                                            totalPages = if (uiState.needsUserPageInput && uiState.userInputPageCount > 0)
+                                                uiState.userInputPageCount else uiState.pageCount,
+                                            colorMode = uiState.printSettings.colorMode,
+                                            orientation = uiState.printSettings.orientation,
+                                            onPageChange = { page -> viewModel.updatePreviewPage(page) },
+                                            modifier = Modifier.padding(top = 16.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+
                         // In DocumentUploadScreen.kt - Add this after file selection
                         if (uiState.needsUserPageInput) {
                             Card(
@@ -315,7 +373,7 @@ fun DocumentUploadScreen(
                                 .padding(bottom = 16.dp),
                             horizontalArrangement = Arrangement.SpaceEvenly
                         ) {
-                            ColorMode.values().forEach { mode ->
+                            ColorMode.entries.forEach { mode ->
                                 FilterChip(
                                     selected = uiState.printSettings.colorMode == mode,
                                     onClick = {
@@ -332,7 +390,41 @@ fun DocumentUploadScreen(
                             }
                         }
 
-                        Divider(modifier = Modifier.padding(vertical = 8.dp))
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+
+
+                        // Orientation Section (NEW)
+                        Text(
+                            text = "Orientation",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(bottom = 8.dp, top = 8.dp)
+                        )
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 16.dp),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            Orientation.entries.forEach { orientation ->
+                                FilterChip(
+                                    selected = uiState.printSettings.orientation == orientation,
+                                    onClick = {
+                                        viewModel.updatePrintSettings(
+                                            uiState.printSettings.copy(orientation = orientation)
+                                        )
+                                    },
+                                    label = { Text(orientation.displayName) }
+                                )
+                            }
+                        }
+
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
 
                         // Page Selection Section with improved UI
                         Text(
@@ -347,7 +439,7 @@ fun DocumentUploadScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceEvenly
                             ) {
-                                PageSelection.values().forEach { selection ->
+                                PageSelection.entries.forEach { selection ->
                                     FilterChip(
                                         selected = uiState.printSettings.pagesToPrint == selection,
                                         onClick = {
@@ -393,7 +485,9 @@ fun DocumentUploadScreen(
                             }
                         }
 
-                        Divider(modifier = Modifier.padding(vertical = 8.dp))
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
 
                         // Copies Section - Fixed numeric input
                         Text(
@@ -588,7 +682,189 @@ fun DocumentUploadScreen(
     }
 }
 
+@Composable
+private fun PdfPreview(
+    uri: Uri,
+    currentPage: Int,
+    totalPages: Int,
+    colorMode: ColorMode,
+    orientation: Orientation,
+    onPageChange: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    var bitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var isLoading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(uri, currentPage, colorMode, orientation) {
+        isLoading = true
+        try {
+            context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                PdfRenderer(pfd).use { renderer ->
+                    if (currentPage < renderer.pageCount) {
+                        renderer.openPage(currentPage).use { page ->
+                            val displayMetrics = context.resources.displayMetrics
+                            val baseWidth = (displayMetrics.widthPixels * 0.8).toInt()
+
+                            // Adjust dimensions based on orientation
+                            val (width, height) = when (orientation) {
+                                Orientation.PORTRAIT -> {
+                                    val h = (baseWidth * page.height / page.width.toFloat()).toInt()
+                                    baseWidth to h
+                                }
+                                Orientation.LANDSCAPE -> {
+                                    val h = (baseWidth * page.width / page.height.toFloat()).toInt()
+                                    baseWidth to h
+                                }
+                            }
+
+                            val originalBitmap = createBitmap(width, height)
+
+                            // Render based on orientation
+                            when (orientation) {
+                                Orientation.PORTRAIT -> {
+                                    page.render(originalBitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                                }
+                                Orientation.LANDSCAPE -> {
+                                    // Create a rotated bitmap
+                                    val tempBitmap = createBitmap(height, width)
+                                    page.render(tempBitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+
+                                    val matrix = Matrix().apply { postRotate(90f) }
+                                    val rotatedBitmap = Bitmap.createBitmap(tempBitmap, 0, 0, tempBitmap.width, tempBitmap.height, matrix, true)
+
+                                    val canvas = Canvas(originalBitmap)
+                                    val srcRect = Rect(0, 0, rotatedBitmap.width, rotatedBitmap.height)
+                                    val destRect = Rect(0, 0, width, height)
+                                    canvas.drawBitmap(rotatedBitmap, srcRect, destRect, null)
+
+                                    tempBitmap.recycle()
+                                    rotatedBitmap.recycle()
+                                }
+                            }
+
+                            // Apply color mode filter
+                            val finalBitmap = when (colorMode) {
+                                ColorMode.COLOR -> originalBitmap
+                                ColorMode.BW -> {
+                                    applyGrayscaleFilter(originalBitmap)
+                                }
+                            }
+
+                            bitmap = finalBitmap
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            println("Error loading PDF preview: ${e.message}")
+            // Handle error
+        }
+        isLoading = false
+    }
+
+    Column(modifier = modifier) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(300.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .border(
+                    1.dp,
+                    MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                    RoundedCornerShape(8.dp)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            if (isLoading) {
+                CircularProgressIndicator()
+            } else {
+                bitmap?.let { bmp ->
+                    Image(
+                        bitmap = bmp.asImageBitmap(),
+                        contentDescription = "PDF Preview",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
+                    )
+                }
+            }
+        }
+
+        // Preview note
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            )
+        ) {
+            Row(
+                modifier = Modifier.padding(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Info,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Preview simulation - actual print output may vary",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        if (totalPages > 1) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(
+                    onClick = { if (currentPage > 0) onPageChange(currentPage - 1) },
+                    enabled = currentPage > 0
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Previous")
+                }
+
+                Text(
+                    text = "Page ${currentPage + 1} of $totalPages",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+
+                IconButton(
+                    onClick = { if (currentPage < totalPages - 1) onPageChange(currentPage + 1) },
+                    enabled = currentPage < totalPages - 1
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next")
+                }
+            }
+        }
+    }
+}
+
+private fun applyGrayscaleFilter(originalBitmap: Bitmap): Bitmap {
+    val grayscaleBitmap = createBitmap(originalBitmap.width, originalBitmap.height)
+
+    val canvas = Canvas(grayscaleBitmap)
+    val paint = Paint().apply {
+        colorFilter = ColorMatrixColorFilter(ColorMatrix().apply {
+            setSaturation(0f) // Remove all color saturation
+        })
+    }
+
+    canvas.drawBitmap(originalBitmap, 0f, 0f, paint)
+    return grayscaleBitmap
+}
+
 // Helper function to format file size
+@SuppressLint("DefaultLocale")
 private fun formatFileSize(sizeInBytes: Long): String {
     return when {
         sizeInBytes < 1024 -> "$sizeInBytes B"
@@ -618,6 +894,7 @@ private fun isValidPageRange(pageRange: String): Boolean {
         }
         return true
     } catch (e: Exception) {
+        println("Invalid page range format: ${e.message}")
         return false
     }
 }

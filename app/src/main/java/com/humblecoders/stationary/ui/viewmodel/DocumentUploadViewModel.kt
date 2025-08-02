@@ -32,7 +32,9 @@ data class DocumentUploadUiState(
     val error: String? = null,
     val orderId: String? = null,
     val customerId: String = "",
-    val customerPhone: String = ""
+    val customerPhone: String = "",
+    val showPreview: Boolean = true,
+    val currentPreviewPage: Int = 0
 )
 
 class DocumentUploadViewModel(
@@ -154,6 +156,14 @@ class DocumentUploadViewModel(
                 )
             }
         }
+    }
+
+    fun togglePreview() {
+        _uiState.value = _uiState.value.copy(showPreview = !_uiState.value.showPreview)
+    }
+
+    fun updatePreviewPage(page: Int) {
+        _uiState.value = _uiState.value.copy(currentPreviewPage = page)
     }
 
     fun submitOrderWithoutPayment() {
