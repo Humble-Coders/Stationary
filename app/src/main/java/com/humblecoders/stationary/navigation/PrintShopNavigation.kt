@@ -1,18 +1,28 @@
 package com.humblecoders.stationary.navigation
 
 import android.app.Activity
+import android.content.Intent
+import androidx.activity.result.ActivityResultLauncher
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import com.humblecoders.stationary.data.repository.UserPreferencesRepository
+import com.google.firebase.auth.FirebaseAuth
 import com.humblecoders.stationary.ui.screen.*
+import com.humblecoders.stationary.ui.screen.auth.LoginScreen
+import com.humblecoders.stationary.ui.screen.auth.RegisterScreen
+import com.humblecoders.stationary.ui.screen.auth.ProfileScreen
 import com.humblecoders.stationary.ui.viewmodel.*
+import com.humblecoders.stationary.ui.viewmodel.auth.LoginViewModel
+import com.humblecoders.stationary.ui.viewmodel.auth.RegisterViewModel
+import com.humblecoders.stationary.ui.viewmodel.auth.ProfileViewModel
 import kotlinx.coroutines.launch
 
 sealed class Screen(val route: String) {
-    object CustomerInfo : Screen("customer_info")
+    object Login : Screen("login")
+    object Register : Screen("register")
+    object Profile : Screen("profile")
     object Home : Screen("home")
     object DocumentUpload : Screen("document_upload")
     object OrderHistory : Screen("order_history")
@@ -30,34 +40,58 @@ fun PrintShopNavigation(
     homeViewModel: HomeViewModel,
     documentUploadViewModel: DocumentUploadViewModel,
     paymentViewModel: PaymentViewModel,
-    customerInfoViewModel: CustomerInfoViewModel,
+    loginViewModel: LoginViewModel,
+    registerViewModel: RegisterViewModel,
+    profileViewModel: ProfileViewModel,
     activity: Activity,
-    startDestination: String = Screen.CustomerInfo.route,
-    userPreferencesRepository: UserPreferencesRepository // Add this parameter
+    googleSignInLauncher: ActivityResultLauncher<Intent>
 ) {
-    val coroutineScope = rememberCoroutineScope() // Add this for launching coroutines
+
+    // Check if user is already logged in
+    val startDestination = if (FirebaseAuth.getInstance().currentUser != null) {
+        Screen.Home.route
+    } else {
+        Screen.Login.route
+    }
 
     NavHost(
         navController = navController,
         startDestination = startDestination
     ) {
-        composable(Screen.CustomerInfo.route) {
-            CustomerInfoScreen(
-                viewModel = customerInfoViewModel,
-                onCustomerInfoSubmitted = { customerId, customerPhone ->
-                    // Save customer info to preferences
-                    coroutineScope.launch {
-                        userPreferencesRepository.saveCustomerInfo(customerId, customerPhone)
-                    }
+        // Authentication Screens
+        composable(Screen.Login.route) {
+            LoginScreen(
+                viewModel = loginViewModel,
+                navController = navController,
+                googleSignInLauncher = googleSignInLauncher
+            )
+        }
 
-                    homeViewModel.setCustomerId(customerId)
-                    documentUploadViewModel.setCustomerInfo(customerId, customerPhone)
-                    navController.navigate(Screen.Home.route) {
-                        popUpTo(Screen.CustomerInfo.route) { inclusive = true }
+        composable(Screen.Register.route) {
+            RegisterScreen(
+                viewModel = registerViewModel,
+                navController = navController,
+                googleSignInLauncher = googleSignInLauncher
+            )
+        }
+
+        composable(Screen.Profile.route) {
+            ProfileScreen(
+                viewModel = profileViewModel,
+                navController = navController,
+                onSignOut = {
+                    navController.navigate(Screen.Login.route) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                },
+                onAccountDeleted = {
+                    navController.navigate(Screen.Login.route) {
+                        popUpTo(0) { inclusive = true }
                     }
                 }
             )
         }
+
 
         composable(Screen.Home.route) {
             HomeScreen(
@@ -68,6 +102,9 @@ fun PrintShopNavigation(
                 },
                 onNavigateToOrderHistory = {
                     navController.navigate(Screen.OrderHistory.route)
+                },
+                onNavigateToProfile = {
+                    navController.navigate(Screen.Profile.route)
                 }
             )
         }
@@ -110,7 +147,7 @@ fun PrintShopNavigation(
                 }
             )
         }
-        // Add this inside NavHost
+
         composable(Screen.OrderHistory.route) {
             OrderHistoryScreen(
                 viewModel = homeViewModel,

@@ -3,6 +3,7 @@ package com.humblecoders.stationary.ui.viewmodel
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.auth.FirebaseAuth
 import com.humblecoders.stationary.data.model.PrintOrder
 import com.humblecoders.stationary.data.repository.PrintOrderRepository
 import com.humblecoders.stationary.data.repository.ShopSettingsRepository
@@ -32,18 +33,19 @@ class HomeViewModel(
 
     init {
         observeShopStatus()
-    }
-
-    fun setCustomerId(customerId: String) {
-        if (customerId.isNotEmpty()) {
+        // Auto-observe orders when user is authenticated
+        val currentUser = FirebaseAuth.getInstance().currentUser
+        if (currentUser != null) {
             _uiState.value = _uiState.value.copy(
-                customerId = customerId,
+                customerId = currentUser.uid,
                 isCustomerIdSet = true,
                 isLoading = true
             )
             observeUserOrders()
         }
     }
+
+
 
     private fun observeShopStatus() {
         viewModelScope.launch {
@@ -64,25 +66,24 @@ class HomeViewModel(
     }
 
     private fun observeUserOrders() {
-        if (_uiState.value.customerId.isEmpty()) return
+        val currentUser = FirebaseAuth.getInstance().currentUser
+        if (currentUser == null) return
+
+        val customerId = currentUser.uid
 
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null, customerId = customerId)
 
             try {
-                Log.d("HomeViewModel", "Observing orders for customer ID: ${_uiState.value.customerId}")
-                printOrderRepository.observeUserOrders(_uiState.value.customerId)
+                printOrderRepository.observeUserOrders(customerId)
                     .collect { orders ->
-
                         _uiState.value = _uiState.value.copy(
                             orders = orders,
                             error = null,
                             isLoading = false
                         )
-                        Log.d("HomeViewModel","${_uiState.value.orders}")
-
                     }
-            } catch (e: Exception) {
+            }catch (e: Exception) {
                 // Only show error if we don't have existing orders
                 val currentOrders = _uiState.value.orders
                 Log.d("HomeViewModel","${_uiState.value.orders}")

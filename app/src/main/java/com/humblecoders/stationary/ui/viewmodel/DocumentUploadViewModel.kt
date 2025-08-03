@@ -6,6 +6,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.auth.FirebaseAuth
 import com.humblecoders.stationary.data.model.PrintOrder
 import com.humblecoders.stationary.data.model.PrintSettings
 import com.humblecoders.stationary.data.model.ShopSettings
@@ -49,11 +50,14 @@ class DocumentUploadViewModel(
         observeShopStatus()
     }
 
-    fun setCustomerInfo(customerId: String, customerPhone: String) {
-        _uiState.value = _uiState.value.copy(
-            customerId = customerId,
-            customerPhone = customerPhone
-        )
+    fun setUserInfo() {
+        val currentUser = FirebaseAuth.getInstance().currentUser
+        if (currentUser != null) {
+            _uiState.value = _uiState.value.copy(
+                customerId = currentUser.uid,
+                customerPhone = "" // You can get this from user profile if needed
+            )
+        }
     }
 
     fun selectFile(context: Context, uri: Uri) {
@@ -94,6 +98,13 @@ class DocumentUploadViewModel(
     }
 
     fun submitOrderWithPayment(onOrderCreated: (String) -> Unit) {
+
+        val currentUser = FirebaseAuth.getInstance().currentUser
+        if (currentUser == null) {
+            _uiState.value = _uiState.value.copy(error = "Please sign in to continue")
+            return
+        }
+
         if (!_uiState.value.isShopOpen) {
             _uiState.value = _uiState.value.copy(error = "Shop is currently closed")
             return

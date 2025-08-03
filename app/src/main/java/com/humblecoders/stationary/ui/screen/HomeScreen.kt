@@ -14,6 +14,7 @@ import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Segment
 import androidx.compose.material.icons.filled.Upload
@@ -46,7 +47,9 @@ fun HomeScreen(
     mainViewModel: MainViewModel,
     homeViewModel: HomeViewModel,
     onNavigateToUpload: () -> Unit,
-    onNavigateToOrderHistory : () -> Unit
+    onNavigateToOrderHistory : () -> Unit,
+    onNavigateToProfile: () -> Unit
+
 ) {
     val mainUiState by mainViewModel.uiState.collectAsState()
     val homeUiState by homeViewModel.uiState.collectAsState()
@@ -100,6 +103,17 @@ fun HomeScreen(
                             horizontalAlignment = Alignment.End,
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
+                            // Profile FAB
+                            SmallFloatingActionButton(
+                                onClick = {
+                                    expanded = false
+                                    onNavigateToProfile()
+                                },
+                                containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                            ) {
+                                Icon(Icons.Default.Person, contentDescription = "Profile")
+                            }
+
                             // History FAB
                             SmallFloatingActionButton(
                                 onClick = {

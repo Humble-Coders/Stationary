@@ -60,6 +60,7 @@ dependencies {
     implementation(libs.firebase.firestore.ktx)
     implementation(libs.firebase.storage.ktx)
     implementation(libs.firebase.analytics.ktx)
+    implementation(libs.firebase.auth.ktx)
 
     // PDF Viewer
     implementation ("androidx.navigation:navigation-compose:2.7.6")
@@ -69,6 +70,14 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended:1.5.0")
 
     implementation("androidx.compose.material:material:1.5.4")
+
+    // Google Sign-In
+    implementation("com.google.android.gms:play-services-auth:20.7.0")
+
+    implementation("io.coil-kt:coil-compose:2.5.0")
+
+    implementation("androidx.compose.material3:material3:1.1.2")
+
 
 
 
