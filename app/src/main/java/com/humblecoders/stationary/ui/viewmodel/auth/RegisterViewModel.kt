@@ -16,21 +16,6 @@ class RegisterViewModel(private val repository: FirebaseAuthRepository) : ViewMo
     private val _registerState = MutableStateFlow<RegisterState>(RegisterState.Idle)
     val registerState: StateFlow<RegisterState> = _registerState.asStateFlow()
 
-    fun startGoogleSignIn(): Intent {
-        Log.d("GoogleSignIn", "Starting Google Sign-In from Register")
-        _registerState.value = RegisterState.GoogleSignInLoading
-
-        viewModelScope.launch {
-            delay(30000) // 30 seconds timeout
-            if (_registerState.value is RegisterState.GoogleSignInLoading) {
-                Log.w("GoogleSignIn", "Google Sign-In timed out in register")
-                _registerState.value =
-                    RegisterState.Error("Google Sign-In timed out. Please try again.")
-            }
-        }
-
-        return repository.getGoogleSignInIntent()
-    }
 
     fun handleGoogleSignInResult(data: Intent?) {
         viewModelScope.launch {
@@ -114,6 +99,36 @@ class RegisterViewModel(private val repository: FirebaseAuthRepository) : ViewMo
 
     fun resetState() {
         _registerState.value = RegisterState.Idle
+    }
+
+    // Add this method to RegisterViewModel:
+    fun clearGoogleSignInState() {
+        viewModelScope.launch {
+            try {
+                repository.signOutGoogle()
+                Log.d("RegisterViewModel", "Google state cleared")
+            } catch (e: Exception) {
+                Log.e("RegisterViewModel", "Error clearing Google state", e)
+            }
+        }
+    }
+
+    // Update startGoogleSignIn method:
+    fun startGoogleSignIn(): Intent {
+        Log.d("GoogleSignIn", "Starting Google Sign-In from Register")
+        _registerState.value = RegisterState.GoogleSignInLoading
+
+        viewModelScope.launch {
+            delay(30000) // 30 seconds timeout
+            if (_registerState.value is RegisterState.GoogleSignInLoading) {
+                Log.w("GoogleSignIn", "Google Sign-In timed out in register")
+                _registerState.value = RegisterState.Error("Google Sign-In timed out. Please try again.")
+            }
+        }
+
+        // Clear any existing state before starting new sign-in
+        clearGoogleSignInState()
+        return repository.getGoogleSignInIntent()
     }
 }
 

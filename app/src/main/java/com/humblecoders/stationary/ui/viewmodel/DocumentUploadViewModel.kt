@@ -48,9 +48,11 @@ class DocumentUploadViewModel(
 
     init {
         observeShopStatus()
+        initializeUserInfo()
     }
 
-    fun setUserInfo() {
+    // Add this method:
+    private fun initializeUserInfo() {
         val currentUser = FirebaseAuth.getInstance().currentUser
         if (currentUser != null) {
             _uiState.value = _uiState.value.copy(
@@ -58,6 +60,14 @@ class DocumentUploadViewModel(
                 customerPhone = "" // You can get this from user profile if needed
             )
         }
+    }
+
+    // Update or add this method:
+    fun setCustomerInfo(customerId: String, customerPhone: String) {
+        _uiState.value = _uiState.value.copy(
+            customerId = customerId,
+            customerPhone = customerPhone
+        )
     }
 
     fun selectFile(context: Context, uri: Uri) {

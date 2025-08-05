@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -93,7 +94,18 @@ fun PrintShopNavigation(
         }
 
 
+        // In PrintShopNavigation.kt, update the Home screen composable:
+
         composable(Screen.Home.route) {
+            // Initialize HomeViewModel with current user when navigating to Home
+            LaunchedEffect(Unit) {
+                val currentUser = FirebaseAuth.getInstance().currentUser
+                if (currentUser != null) {
+                    homeViewModel.setCustomerId(currentUser.uid)
+                    documentUploadViewModel.setCustomerInfo(currentUser.uid, "")
+                }
+            }
+
             HomeScreen(
                 mainViewModel = mainViewModel,
                 homeViewModel = homeViewModel,

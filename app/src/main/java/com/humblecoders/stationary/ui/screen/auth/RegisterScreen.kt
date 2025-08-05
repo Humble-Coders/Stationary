@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.humblecoders.stationary.ui.viewmodel.auth.RegisterViewModel
 import com.humblecoders.stationary.ui.viewmodel.auth.RegisterState
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -58,12 +59,14 @@ fun RegisterScreen(
     LaunchedEffect(registerState) {
         when (registerState) {
             is RegisterState.Success -> {
+                delay(300)
                 navController.navigate("home") {
-                    popUpTo("login") { inclusive = true }
+                    popUpTo("register") { inclusive = true }
                 }
                 viewModel.resetState()
             }
-            else -> {}
+            else -> {
+            }
         }
     }
 

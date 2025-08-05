@@ -230,10 +230,6 @@ class FirebaseAuthRepository(
         }
     }
 
-    fun getGoogleSignInIntent(): Intent {
-        googleSignInClient.signOut()
-        return googleSignInClient.signInIntent
-    }
 
     private fun getGoogleSignInErrorMessage(statusCode: Int): String {
         return when (statusCode) {
@@ -244,15 +240,44 @@ class FirebaseAuthRepository(
         }
     }
 
+    // In FirebaseAuthRepository.kt, update these methods:
+
     fun signOutGoogle() {
-        googleSignInClient.signOut()
+        try {
+            googleSignInClient.signOut().addOnCompleteListener { task ->
+                if (task.isSuccessful) {
+                    Log.d("AuthRepository", "Google sign out successful")
+                } else {
+                    Log.e("AuthRepository", "Google sign out failed: ${task.exception}")
+                }
+            }
+            // Also revoke access to completely clear the account
+            googleSignInClient.revokeAccess()
+        } catch (e: Exception) {
+            Log.e("AuthRepository", "Error during Google sign out", e)
+        }
     }
 
     fun signOut() {
-        firebaseAuth.signOut()
-        signOutGoogle()
+        try {
+            // Sign out from Firebase first
+            firebaseAuth.signOut()
+            // Then sign out from Google
+            signOutGoogle()
+            Log.d("AuthRepository", "Complete sign out successful")
+        } catch (e: Exception) {
+            Log.e("AuthRepository", "Error during complete sign out", e)
+        }
     }
 
+    // Update the getGoogleSignInIntent method:
+    fun getGoogleSignInIntent(): Intent {
+        // Clear any existing Google Sign-In state
+        googleSignInClient.signOut().addOnCompleteListener {
+            Log.d("AuthRepository", "Google state cleared before new sign-in")
+        }
+        return googleSignInClient.signInIntent
+    }
     suspend fun signInWithEmailAndPassword(email: String, password: String): Result<Unit> {
         return try {
             withContext(Dispatchers.IO) {

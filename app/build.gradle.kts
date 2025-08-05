@@ -51,7 +51,7 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(libs.androidx.appcompat)
-    implementation(libs.material)
+    // REMOVED: implementation(libs.material) - This conflicts with Material 3
     implementation(libs.androidx.activity)
     implementation(libs.androidx.constraintlayout)
 
@@ -62,26 +62,27 @@ dependencies {
     implementation(libs.firebase.analytics.ktx)
     implementation(libs.firebase.auth.ktx)
 
-    // PDF Viewer
-    implementation ("androidx.navigation:navigation-compose:2.7.6")
-    implementation("com.razorpay:checkout:1.6.33")
-    implementation("androidx.datastore:datastore-preferences:1.0.0")
-    //EXTENDED ICONS
-    implementation("androidx.compose.material:material-icons-extended:1.5.0")
+    // Navigation
+    implementation("androidx.navigation:navigation-compose:2.7.6")
 
+    // Payment
+    implementation("com.razorpay:checkout:1.6.33")
+
+    // DataStore
+    implementation("androidx.datastore:datastore-preferences:1.0.0")
+
+    // FIXED: Use consistent versions for Material components
     implementation("androidx.compose.material:material:1.5.4")
+    implementation("androidx.compose.material:material-icons-extended:1.5.4") // Fixed version
 
     // Google Sign-In
     implementation("com.google.android.gms:play-services-auth:20.7.0")
 
-    implementation("io.coil-kt:coil-compose:2.5.0")
+    // Image loading
+    implementation("io.coil-kt:coil-compose:2.5.0");
 
-    implementation("androidx.compose.material3:material3:1.1.2")
-
-
-
-
-
+    // REMOVED: Duplicate Material3 dependency
+    // implementation("androidx.compose.material3:material3:1.1.2")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

@@ -60,20 +60,6 @@ class LoginViewModel(private val repository: FirebaseAuthRepository) : ViewModel
         }
     }
 
-    fun startGoogleSignIn(): Intent {
-        Log.d("GoogleSignIn", "Starting Google Sign-In")
-        _loginState.value = LoginState.GoogleSignInLoading
-
-        viewModelScope.launch {
-            delay(30000) // 30 seconds timeout
-            if (_loginState.value is LoginState.GoogleSignInLoading) {
-                Log.w("GoogleSignIn", "Google Sign-In timed out")
-                _loginState.value = LoginState.Error("Google Sign-In timed out. Please try again.")
-            }
-        }
-
-        return repository.getGoogleSignInIntent()
-    }
 
     fun cancelGoogleSignIn() {
         if (_loginState.value is LoginState.GoogleSignInLoading) {
@@ -136,6 +122,36 @@ class LoginViewModel(private val repository: FirebaseAuthRepository) : ViewModel
     }
 
     fun isUserLoggedIn() = repository.isUserLoggedIn()
+
+    // Add this method to LoginViewModel:
+    fun clearGoogleSignInState() {
+        viewModelScope.launch {
+            try {
+                repository.signOutGoogle()
+                Log.d("LoginViewModel", "Google state cleared")
+            } catch (e: Exception) {
+                Log.e("LoginViewModel", "Error clearing Google state", e)
+            }
+        }
+    }
+
+    // Update startGoogleSignIn method:
+    fun startGoogleSignIn(): Intent {
+        Log.d("GoogleSignIn", "Starting Google Sign-In")
+        _loginState.value = LoginState.GoogleSignInLoading
+
+        viewModelScope.launch {
+            delay(30000) // 30 seconds timeout
+            if (_loginState.value is LoginState.GoogleSignInLoading) {
+                Log.w("GoogleSignIn", "Google Sign-In timed out")
+                _loginState.value = LoginState.Error("Google Sign-In timed out. Please try again.")
+            }
+        }
+
+        // Clear any existing state before starting new sign-in
+        clearGoogleSignInState()
+        return repository.getGoogleSignInIntent()
+    }
 }
 
 sealed class LoginState {

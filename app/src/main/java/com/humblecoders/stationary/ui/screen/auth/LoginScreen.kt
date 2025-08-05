@@ -35,6 +35,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.material.icons.outlined.Info
 import com.humblecoders.stationary.ui.viewmodel.auth.LoginViewModel
 import com.humblecoders.stationary.ui.viewmodel.auth.LoginState
+import kotlinx.coroutines.delay
 
 val GoldenShade = Color(0xFF1976D2)
 
@@ -62,6 +63,7 @@ fun LoginScreen(
     LaunchedEffect(loginState) {
         when (loginState) {
             is LoginState.Success -> {
+                delay(300)
                 navController.navigate("home") {
                     popUpTo("login") { inclusive = true }
                 }

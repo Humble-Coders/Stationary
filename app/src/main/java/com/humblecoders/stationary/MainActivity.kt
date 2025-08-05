@@ -2,19 +2,14 @@ package com.humblecoders.stationary
 
 import StationaryTheme
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.ComposeNavigator
 import androidx.navigation.compose.DialogNavigator
@@ -27,14 +22,12 @@ import com.humblecoders.stationary.data.repository.ProfileRepository
 import com.humblecoders.stationary.data.repository.ShopSettingsRepository
 import com.humblecoders.stationary.data.service.RazorpayService
 import com.humblecoders.stationary.navigation.PrintShopNavigation
-import com.humblecoders.stationary.navigation.Screen
 import com.humblecoders.stationary.ui.viewmodel.*
 import com.humblecoders.stationary.ui.viewmodel.auth.LoginViewModel
-import com.humblecoders.stationary.ui.viewmodel.auth.RegisterViewModel
 import com.humblecoders.stationary.ui.viewmodel.auth.ProfileViewModel
+import com.humblecoders.stationary.ui.viewmodel.auth.RegisterViewModel
 import com.razorpay.PaymentData
 import com.razorpay.PaymentResultWithDataListener
-import android.Manifest
 
 class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
 
@@ -97,22 +90,35 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
         razorpayService = RazorpayService()
     }
 
+    // In MainActivity.kt, update the initializeGoogleSignInLauncher method:
+
     private fun initializeGoogleSignInLauncher() {
         googleSignInLauncher = registerForActivityResult(
             ActivityResultContracts.StartActivityForResult()
         ) { result ->
+            Log.d("MainActivity", "Google Sign-In result: ${result.resultCode}")
+
             when (result.resultCode) {
                 RESULT_OK -> {
+                    Log.d("MainActivity", "Google Sign-In OK, processing result")
                     loginViewModel.handleGoogleSignInResult(result.data)
                     registerViewModel.handleGoogleSignInResult(result.data)
                 }
                 RESULT_CANCELED -> {
+                    Log.d("MainActivity", "Google Sign-In cancelled by user")
                     loginViewModel.cancelGoogleSignIn()
                     registerViewModel.cancelGoogleSignIn()
+                    // Clear Google state on cancellation
+                    loginViewModel.clearGoogleSignInState()
+                    registerViewModel.clearGoogleSignInState()
                 }
                 else -> {
+                    Log.d("MainActivity", "Google Sign-In failed with code: ${result.resultCode}")
                     loginViewModel.cancelGoogleSignIn()
                     registerViewModel.cancelGoogleSignIn()
+                    // Clear Google state on failure
+                    loginViewModel.clearGoogleSignInState()
+                    registerViewModel.clearGoogleSignInState()
                 }
             }
         }

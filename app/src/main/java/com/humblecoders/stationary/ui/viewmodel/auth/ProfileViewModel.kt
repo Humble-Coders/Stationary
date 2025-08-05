@@ -280,6 +280,7 @@ class ProfileViewModel(
             }
         }
     }
+// In ProfileViewModel.kt, update the signOut method:
 
     fun signOut() {
         signOutRequested = true
@@ -290,23 +291,34 @@ class ProfileViewModel(
                 _isSigningOut.value = true
                 Log.d(tag, "Signing out user...")
 
+                // First clear profile repository
                 val profileResult = try {
-                    withTimeout(5000) { profileRepository.signOut() }
+                    withTimeout(5000) {
+                        profileRepository.signOut()
+                    }
                 } catch (e: Exception) {
+                    Log.e(tag, "Profile sign out error", e)
                     Result.failure(e)
                 }
 
+                // Then clear auth repository (this will also clear Google state)
                 val authResult = try {
                     withTimeout(5000) {
                         authRepository.signOut()
                         Result.success(Unit)
                     }
                 } catch (e: Exception) {
+                    Log.e(tag, "Auth sign out error", e)
                     Result.failure(e)
                 }
 
-                Log.d(tag, "Sign out completed - Profile: ${profileResult.isSuccess}, Auth: ${authResult.isSuccess}")
+                // Clear all local state
                 clearAllState()
+
+                // Add small delay to ensure cleanup completes
+                delay(500)
+
+                Log.d(tag, "Sign out completed - Profile: ${profileResult.isSuccess}, Auth: ${authResult.isSuccess}")
 
             } catch (e: Exception) {
                 Log.e(tag, "Error during sign out", e)
