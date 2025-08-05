@@ -48,9 +48,11 @@ import com.humblecoders.stationary.ui.component.ShopClosedCard
 import com.humblecoders.stationary.ui.viewmodel.DocumentUploadViewModel
 import android.graphics.*
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.HorizontalDivider
 import androidx.core.graphics.createBitmap
+import com.humblecoders.stationary.data.model.FileType
 
 @SuppressLint("DefaultLocale")
 @OptIn(ExperimentalMaterial3Api::class)
@@ -168,8 +170,8 @@ fun DocumentUploadScreen(
 
                                 // Simplified button approach
                                 Button(
-                                    onClick = { filePickerLauncher.launch("application/pdf") },
-                                    modifier = Modifier.fillMaxWidth(0.6f), // Take 60% of width
+                                    onClick = { filePickerLauncher.launch("*/*") }, // Accept all files, validation happens in selectFile
+                                    modifier = Modifier.fillMaxWidth(0.6f),
                                     shape = RoundedCornerShape(8.dp)
                                 ) {
                                     Icon(
@@ -188,7 +190,7 @@ fun DocumentUploadScreen(
                                 Spacer(modifier = Modifier.height(8.dp))
 
                                 Text(
-                                    text = "Supported format: PDF",
+                                    text = "Supported formats: PDF, Word (DOCX)",
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                     fontSize = 12.sp
                                 )
@@ -210,7 +212,10 @@ fun DocumentUploadScreen(
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
-                                    imageVector = Icons.Outlined.Description,
+                                    imageVector = if (uiState.fileType == FileType.PDF)
+                                        Icons.Outlined.Description
+                                    else
+                                        Icons.Default.Description, // Use different icon for DOCX
                                     contentDescription = null,
                                     modifier = Modifier.size(40.dp),
                                     tint = MaterialTheme.colorScheme.primary
@@ -229,15 +234,21 @@ fun DocumentUploadScreen(
 
                                     Spacer(modifier = Modifier.height(4.dp))
 
+                                    val fileInfo = when (uiState.fileType) {
+                                        FileType.PDF -> "Size: ${formatFileSize(uiState.fileSize)} • ${uiState.pageCount} pages"
+                                        FileType.DOCX -> "Size: ${formatFileSize(uiState.fileSize)} • Word Document"
+                                        null -> "Size: ${formatFileSize(uiState.fileSize)}"
+                                    }
+
                                     Text(
-                                        text = "Size: ${formatFileSize(uiState.fileSize)} • ${uiState.pageCount} pages",
+                                        text = fileInfo,
                                         fontSize = 12.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
 
                                 TextButton(
-                                    onClick = { filePickerLauncher.launch("application/pdf") },
+                                    onClick = { filePickerLauncher.launch("*/*") },
                                 ) {
                                     Text("Change")
                                 }
@@ -246,6 +257,11 @@ fun DocumentUploadScreen(
 
                         // After the file selection card, add preview section
 
+                        AnimatedVisibility(
+                            visible = uiState.fileType == FileType.PDF, // Only show for PDF
+                            enter = fadeIn() + expandVertically(),
+                            exit = fadeOut() + shrinkVertically()
+                        ) {
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -288,6 +304,50 @@ fun DocumentUploadScreen(
                                     }
                                 }
                             }
+                        }
+
+                        AnimatedVisibility(
+                            visible = uiState.fileType == FileType.DOCX,
+                            enter = fadeIn() + expandVertically(),
+                            exit = fadeOut() + shrinkVertically()
+                        ) {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 16.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                )
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Info,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(20.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "Word Document",
+                                            fontSize = 16.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    Text(
+                                        text = "• No preview available for Word documents\n• Entire document will be printed\n• Document will require manual processing",
+                                        fontSize = 14.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        lineHeight = 20.sp
+                                    )
+                                }
+                            }
+                        }
 
 
                         // In DocumentUploadScreen.kt - Add this after file selection
@@ -426,62 +486,69 @@ fun DocumentUploadScreen(
                             modifier = Modifier.padding(vertical = 8.dp)
                         )
 
-                        // Page Selection Section with improved UI
-                        Text(
-                            text = "Pages to Print",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
-                            modifier = Modifier.padding(bottom = 8.dp, top = 8.dp)
-                        )
-
-                        Column(modifier = Modifier.padding(bottom = 16.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceEvenly
-                            ) {
-                                PageSelection.entries.forEach { selection ->
-                                    FilterChip(
-                                        selected = uiState.printSettings.pagesToPrint == selection,
-                                        onClick = {
-                                            viewModel.updatePrintSettings(
-                                                uiState.printSettings.copy(pagesToPrint = selection)
-                                            )
-                                        },
-                                        label = { Text(selection.displayName) }
-                                    )
-                                }
-                            }
-
-                            AnimatedVisibility(
-                                visible = uiState.printSettings.pagesToPrint == PageSelection.CUSTOM,
-                                enter = fadeIn() + expandVertically(),
-                                exit = fadeOut() + shrinkVertically()
-                            ) {
-                                val isValidRange = remember(uiState.printSettings.customPages) {
-                                    isValidPageRange(uiState.printSettings.customPages)
-                                }
-
-                                OutlinedTextField(
-                                    value = uiState.printSettings.customPages,
-                                    onValueChange = {
-                                        viewModel.updatePrintSettings(
-                                            uiState.printSettings.copy(customPages = it)
-                                        )
-                                    },
-                                    label = { Text("Custom Pages") },
-                                    placeholder = { Text("e.g., 1-3,5,7-10") },
-                                    isError = uiState.printSettings.customPages.isNotEmpty() && !isValidRange,
-                                    supportingText = {
-                                        if (uiState.printSettings.customPages.isNotEmpty() && !isValidRange) {
-                                            Text("Invalid page range format")
-                                        } else {
-                                            Text("Specify individual pages or ranges (e.g., 1,3,5-7)")
-                                        }
-                                    },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(top = 8.dp)
+                        AnimatedVisibility(
+                            visible = uiState.fileType == FileType.PDF, // Only show for PDF
+                            enter = fadeIn() + expandVertically(),
+                            exit = fadeOut() + shrinkVertically()
+                        ) {
+                            Column {
+                                Text(
+                                    text = "Pages to Print",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    modifier = Modifier.padding(bottom = 8.dp, top = 8.dp)
                                 )
+
+                                Column(modifier = Modifier.padding(bottom = 16.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceEvenly
+                                    ) {
+                                        PageSelection.entries.forEach { selection ->
+                                            FilterChip(
+                                                selected = uiState.printSettings.pagesToPrint == selection,
+                                                onClick = {
+                                                    viewModel.updatePrintSettings(
+                                                        uiState.printSettings.copy(pagesToPrint = selection)
+                                                    )
+                                                },
+                                                label = { Text(selection.displayName) }
+                                            )
+                                        }
+                                    }
+
+                                    AnimatedVisibility(
+                                        visible = uiState.printSettings.pagesToPrint == PageSelection.CUSTOM,
+                                        enter = fadeIn() + expandVertically(),
+                                        exit = fadeOut() + shrinkVertically()
+                                    ) {
+                                        val isValidRange = remember(uiState.printSettings.customPages) {
+                                            isValidPageRange(uiState.printSettings.customPages)
+                                        }
+
+                                        OutlinedTextField(
+                                            value = uiState.printSettings.customPages,
+                                            onValueChange = {
+                                                viewModel.updatePrintSettings(
+                                                    uiState.printSettings.copy(customPages = it)
+                                                )
+                                            },
+                                            label = { Text("Custom Pages") },
+                                            placeholder = { Text("e.g., 1-3,5,7-10") },
+                                            isError = uiState.printSettings.customPages.isNotEmpty() && !isValidRange,
+                                            supportingText = {
+                                                if (uiState.printSettings.customPages.isNotEmpty() && !isValidRange) {
+                                                    Text("Invalid page range format")
+                                                } else {
+                                                    Text("Specify individual pages or ranges (e.g., 1,3,5-7)")
+                                                }
+                                            },
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(top = 8.dp)
+                                        )
+                                    }
+                                }
                             }
                         }
 
@@ -606,7 +673,7 @@ fun DocumentUploadScreen(
                                 onNavigateToPayment(orderId, uiState.calculatedPrice, uiState.customerPhone)
                             }
                         },
-                        enabled = !uiState.isUploading && (showPrintSettings || !uiState.selectedFile?.equals(null)!!),
+                        enabled = !uiState.isUploading && uiState.selectedFile != null,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp)
@@ -627,6 +694,7 @@ fun DocumentUploadScreen(
                             Text("Upload & Pay Now", fontSize = 16.sp)
                         }
                     }
+
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),

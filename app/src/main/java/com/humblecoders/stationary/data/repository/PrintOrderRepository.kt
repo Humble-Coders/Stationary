@@ -5,6 +5,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.snapshots
 import com.google.firebase.storage.FirebaseStorage
 import com.humblecoders.stationary.data.model.ColorMode
+import com.humblecoders.stationary.data.model.FileType
 import com.humblecoders.stationary.data.model.PageSelection
 import com.humblecoders.stationary.data.model.PaymentTransactionData
 import com.humblecoders.stationary.data.model.PaymentStatus
@@ -107,13 +108,17 @@ class PrintOrderRepository(firestore: FirebaseFirestore, storage: FirebaseStorag
     }
 
 
-    fun calculatePrice(settings: PrintSettings, pageCount: Int, shopSettings: ShopSettings): Double {
+    fun calculatePrice(settings: PrintSettings, pageCount: Int, shopSettings: ShopSettings, fileType: FileType? = null): Double {
         val pricePerPage = when (settings.colorMode) {
             ColorMode.COLOR -> shopSettings.pricePerPage.color
             ColorMode.BW -> shopSettings.pricePerPage.bw
         }
 
-        val actualPagesToPrint = calculateActualPagesToPrint(settings, pageCount)
+        val actualPagesToPrint = when (fileType) {
+            FileType.DOCX -> 1 // DOCX files are treated as single unit regardless of actual pages
+            FileType.PDF, null -> calculateActualPagesToPrint(settings, pageCount)
+        }
+
         return pricePerPage * actualPagesToPrint * settings.copies
     }
 

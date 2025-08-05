@@ -3,6 +3,8 @@ package com.humblecoders.stationary.data.model
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.PropertyName
 
+// Add this field to the PrintOrder data class in models.kt
+
 data class PrintOrder(
     val orderId: String = "",
     val customerId: String = "",
@@ -10,6 +12,7 @@ data class PrintOrder(
     val documentName: String = "",
     val documentUrl: String = "",
     val documentSize: Long = 0,
+    val fileType: String = "PDF", // Add this field with default value
     val pageCount: Int = 0,
     val printSettings: PrintSettings? = null,
     val paymentStatus: PaymentStatus = PaymentStatus.UNPAID,
@@ -138,3 +141,7 @@ sealed class PaymentResult {
     ) : PaymentResult()
 }
 
+enum class FileType(val displayName: String, val extension: String) {
+    PDF("PDF Document", ".pdf"),
+    DOCX("Word Document", ".docx")
+}

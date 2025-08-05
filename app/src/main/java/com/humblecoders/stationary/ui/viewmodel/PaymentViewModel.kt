@@ -29,46 +29,33 @@ class PaymentViewModel(
 
     private val _uiState = MutableStateFlow(PaymentUiState())
     val uiState: StateFlow<PaymentUiState> = _uiState.asStateFlow()
+    private val _currentPaymentInfo = MutableStateFlow<PaymentInfo?>(null)
+    val currentPaymentInfo: StateFlow<PaymentInfo?> = _currentPaymentInfo.asStateFlow()
 
-    fun clearError() {
-        _uiState.value = _uiState.value.copy(error = null)
+    fun setPaymentInfo(orderId: String, amount: Double, customerPhone: String) {
+        _currentPaymentInfo.value = PaymentInfo(orderId, amount, customerPhone)
     }
 
+    // Update the clearState method
+    fun clearState() {
+        _uiState.value = PaymentUiState()
+        _currentPaymentInfo.value = null
+        currentPaymentAmount = 0.0
+    }
     fun resetPayment() {
         _uiState.value = PaymentUiState()
     }
 
-    fun clearState() {
-        _uiState.value = PaymentUiState()
-        currentPaymentAmount = 0.0
-    }
-
-
-    private fun extractOrderIdFromPaymentData(paymentData: PaymentData): String {
-        // Extract order ID from payment data if available
-        return try {
-            // PaymentData contains various fields, check if order_id is available
-            paymentData.toString() // This might contain JSON data
-            "" // Return empty if not found
-        } catch (e: Exception) {
-            ""
-        }
-    }
-
-    private fun extractAmountFromPaymentData(paymentData: PaymentData?): Double? {
-        // Extract amount from payment data if available
-        return null // Razorpay doesn't always return amount in payment data
-    }
 
 
     private fun validatePaymentInputs(orderId: String, amount: Double, customerPhone: String): String? {
         return when {
             orderId.isEmpty() -> "Invalid order ID"
             amount <= 0 -> "Invalid amount"
-            customerPhone.length != 10 -> "Invalid phone number"
             else -> null
         }
     }
+
 
 
 
@@ -111,7 +98,7 @@ class PaymentViewModel(
                 activity = activity,
                 amount = amount,
                 orderId = orderId,
-                customerPhone = customerPhone
+                customerPhone = customerPhone.ifEmpty { "0000000000" } // Use default if empty
             )
 
         } catch (e: Exception) {
@@ -121,7 +108,6 @@ class PaymentViewModel(
             )
         }
     }
-
     // Update handlePaymentSuccess to use stored amount
     fun handlePaymentSuccess(razorpayPaymentId: String, razorpayPaymentData: PaymentData) {
         viewModelScope.launch {
@@ -155,3 +141,9 @@ class PaymentViewModel(
     }
 
 }
+
+data class PaymentInfo(
+    val orderId: String,
+    val amount: Double,
+    val customerPhone: String
+)

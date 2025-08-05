@@ -5,6 +5,7 @@ import android.content.Intent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -27,11 +28,8 @@ sealed class Screen(val route: String) {
     object Home : Screen("home")
     object DocumentUpload : Screen("document_upload")
     object OrderHistory : Screen("order_history")
-    object Payment : Screen("payment/{orderId}/{amount}/{customerPhone}") {
-        fun createRoute(orderId: String, amount: Double, customerPhone: String): String {
-            return "payment/$orderId/$amount/$customerPhone"
-        }
-    }
+    object Payment : Screen("payment") // Simplified route
+
 }
 
 @Composable
@@ -128,36 +126,42 @@ fun PrintShopNavigation(
                     navController.popBackStack()
                 },
                 onNavigateToPayment = { orderId, amount, customerPhone ->
-                    navController.navigate(
-                        Screen.Payment.createRoute(orderId, amount, customerPhone)
-                    )
+                    // Set the payment info in the ViewModel instead of passing through navigation
+                    paymentViewModel.setPaymentInfo(orderId, amount, customerPhone)
+                    navController.navigate(Screen.Payment.route)
                 }
             )
         }
 
-        composable(Screen.Payment.route) { backStackEntry ->
-            val orderId = backStackEntry.arguments?.getString("orderId") ?: ""
-            val amount = backStackEntry.arguments?.getString("amount")?.toDoubleOrNull() ?: 0.0
-            val customerPhone = backStackEntry.arguments?.getString("customerPhone") ?: ""
+        composable(Screen.Payment.route) {
+            // Get the payment info from the ViewModel instead of navigation arguments
+            val paymentInfo = paymentViewModel.currentPaymentInfo.collectAsState().value
 
-            PaymentScreen(
-                viewModel = paymentViewModel,
-                orderId = orderId,
-                amount = amount,
-                customerPhone = customerPhone,
-                activity = activity,
-                onNavigateBack = {
-                    navController.popBackStack()
-                },
-                onPaymentSuccess = {
-                    documentUploadViewModel.clearState()
-                    paymentViewModel.clearState()
+            if (paymentInfo != null) {
+                PaymentScreen(
+                    viewModel = paymentViewModel,
+                    orderId = paymentInfo.orderId,
+                    amount = paymentInfo.amount,
+                    customerPhone = paymentInfo.customerPhone,
+                    activity = activity,
+                    onNavigateBack = {
+                        navController.popBackStack()
+                    },
+                    onPaymentSuccess = {
+                        documentUploadViewModel.clearState()
+                        paymentViewModel.clearState()
 
-                    navController.navigate(Screen.Home.route) {
-                        popUpTo(Screen.DocumentUpload.route) { inclusive = true }
+                        navController.navigate(Screen.Home.route) {
+                            popUpTo(Screen.DocumentUpload.route) { inclusive = true }
+                        }
                     }
+                )
+            } else {
+                // Handle case where payment info is not available
+                LaunchedEffect(Unit) {
+                    navController.popBackStack()
                 }
-            )
+            }
         }
 
         composable(Screen.OrderHistory.route) {

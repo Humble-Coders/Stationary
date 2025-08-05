@@ -1,6 +1,5 @@
 package com.humblecoders.stationary.util
 
-
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -33,6 +32,18 @@ object FileUtils {
         return fileSize
     }
 
+    fun isValidFile(context: Context, uri: Uri): Boolean {
+        val fileName = getFileName(context, uri)
+        val fileSize = getFileSize(context, uri)
+
+        val isValidFormat = fileName.endsWith(".pdf", ignoreCase = true) ||
+                fileName.endsWith(".docx", ignoreCase = true)
+
+        return isValidFormat &&
+                fileSize > 0 &&
+                fileSize < 50 * 1024 * 1024 // 50MB limit
+    }
+
     fun isValidPdfFile(context: Context, uri: Uri): Boolean {
         val fileName = getFileName(context, uri)
         val fileSize = getFileSize(context, uri)
@@ -42,7 +53,15 @@ object FileUtils {
                 fileSize < 50 * 1024 * 1024 // 50MB limit
     }
 
-    // Add these methods to FileUtils.kt
+    fun isDocxFile(context: Context, uri: Uri): Boolean {
+        val fileName = getFileName(context, uri)
+        return fileName.endsWith(".docx", ignoreCase = true)
+    }
+
+    fun isPdfFile(context: Context, uri: Uri): Boolean {
+        val fileName = getFileName(context, uri)
+        return fileName.endsWith(".pdf", ignoreCase = true)
+    }
 
     fun getPdfPageCount(context: Context, uri: Uri): Int? {
         return try {
@@ -56,5 +75,4 @@ object FileUtils {
             null // Return null when PDF cannot be read
         }
     }
-
 }
