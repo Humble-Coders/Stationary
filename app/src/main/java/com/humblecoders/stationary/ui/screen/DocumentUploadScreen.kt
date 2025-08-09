@@ -2,7 +2,6 @@ package com.humblecoders.stationary.ui.screen
 
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
-import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -15,18 +14,27 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -42,19 +50,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.humblecoders.stationary.data.model.ColorMode
+import com.humblecoders.stationary.data.model.DocumentItem
+import com.humblecoders.stationary.data.model.FileType
 import com.humblecoders.stationary.data.model.Orientation
 import com.humblecoders.stationary.data.model.PageSelection
+import com.humblecoders.stationary.data.model.PrintSettings
 import com.humblecoders.stationary.ui.component.ShopClosedCard
 import com.humblecoders.stationary.ui.viewmodel.DocumentUploadViewModel
-import android.graphics.*
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material3.HorizontalDivider
-import androidx.core.graphics.createBitmap
-import com.humblecoders.stationary.data.model.FileType
 
-@SuppressLint("DefaultLocale")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DocumentUploadScreen(
@@ -65,24 +68,18 @@ fun DocumentUploadScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
-    // Track if settings panel is expanded
-    var showPrintSettings by remember { mutableStateOf(true) }
-
-    // For numeric input validation
-    val copiesString = remember(uiState.printSettings.copies) {
-        mutableStateOf(uiState.printSettings.copies.toString())
-    }
-
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let { viewModel.selectFile(context, it) }
+    val multipleFilePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            viewModel.selectFiles(context, uris)
+        }
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Upload Document") },
+                title = { Text("Upload Documents") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -107,7 +104,7 @@ fun DocumentUploadScreen(
                 return@Column
             }
 
-            // File Selection Card - Improved UI
+            // File Selection Section
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -115,519 +112,67 @@ fun DocumentUploadScreen(
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                    modifier = Modifier.padding(16.dp)
                 ) {
-                    Text(
-                        text = "Document to Print",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 16.dp),
-                        textAlign = TextAlign.Center
-                    )
-
-                    if (uiState.selectedFile == null) {
-                        // No file selected yet - completely restructured for better button visibility
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                            ),
-                            border = BorderStroke(
-                                width = 2.dp,
-                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
-                            )
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(32.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Upload,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(48.dp),
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-
-                                Spacer(modifier = Modifier.height(16.dp))
-
-                                Text(
-                                    text = "Select a PDF document to print",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 16.sp,
-                                    textAlign = TextAlign.Center,
-                                    fontWeight = FontWeight.Medium
-                                )
-
-                                Spacer(modifier = Modifier.height(24.dp))
-
-                                // Simplified button approach
-                                Button(
-                                    onClick = { filePickerLauncher.launch("*/*") }, // Accept all files, validation happens in selectFile
-                                    modifier = Modifier.fillMaxWidth(0.6f),
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.FolderOpen,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = "Browse Files",
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
-
-                                Spacer(modifier = Modifier.height(8.dp))
-
-                                Text(
-                                    text = "Supported formats: PDF, Word (DOCX)",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                    fontSize = 12.sp
-                                )
-                            }
-                        }
-                    }else {
-                        // File selected - show details with improved UI
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .border(
-                                    width = 1.dp,
-                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                                    shape = RoundedCornerShape(8.dp)
-                                )
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f))
-                                .padding(16.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = if (uiState.fileType == FileType.PDF)
-                                        Icons.Outlined.Description
-                                    else
-                                        Icons.Default.Description, // Use different icon for DOCX
-                                    contentDescription = null,
-                                    modifier = Modifier.size(40.dp),
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-
-                                Spacer(modifier = Modifier.width(16.dp))
-
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = uiState.fileName,
-                                        fontWeight = FontWeight.Medium,
-                                        fontSize = 16.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-
-                                    Spacer(modifier = Modifier.height(4.dp))
-
-                                    val fileInfo = when (uiState.fileType) {
-                                        FileType.PDF -> "Size: ${formatFileSize(uiState.fileSize)} • ${uiState.pageCount} pages"
-                                        FileType.DOCX -> "Size: ${formatFileSize(uiState.fileSize)} • Word Document"
-                                        null -> "Size: ${formatFileSize(uiState.fileSize)}"
-                                    }
-
-                                    Text(
-                                        text = fileInfo,
-                                        fontSize = 12.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-
-                                TextButton(
-                                    onClick = { filePickerLauncher.launch("*/*") },
-                                ) {
-                                    Text("Change")
-                                }
-                            }
-                        }
-
-                        // After the file selection card, add preview section
-
-                        AnimatedVisibility(
-                            visible = uiState.fileType == FileType.PDF, // Only show for PDF
-                            enter = fadeIn() + expandVertically(),
-                            exit = fadeOut() + shrinkVertically()
-                        ) {
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(bottom = 16.dp),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                            ) {
-                                Column(modifier = Modifier.padding(16.dp)) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Text(
-                                            text = "Document Preview",
-                                            fontSize = 16.sp,
-                                            fontWeight = FontWeight.Medium
-                                        )
-
-                                        Switch(
-                                            checked = uiState.showPreview,
-                                            onCheckedChange = { viewModel.togglePreview() }
-                                        )
-                                    }
-
-                                    AnimatedVisibility(
-                                        visible = uiState.showPreview,
-                                        enter = fadeIn() + expandVertically(),
-                                        exit = fadeOut() + shrinkVertically()
-                                    ) {
-                                        PdfPreview(
-                                            uri = uiState.selectedFile!!,
-                                            currentPage = uiState.currentPreviewPage,
-                                            totalPages = if (uiState.needsUserPageInput && uiState.userInputPageCount > 0)
-                                                uiState.userInputPageCount else uiState.pageCount,
-                                            colorMode = uiState.printSettings.colorMode,
-                                            orientation = uiState.printSettings.orientation,
-                                            onPageChange = { page -> viewModel.updatePreviewPage(page) },
-                                            modifier = Modifier.padding(top = 16.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        AnimatedVisibility(
-                            visible = uiState.fileType == FileType.DOCX,
-                            enter = fadeIn() + expandVertically(),
-                            exit = fadeOut() + shrinkVertically()
-                        ) {
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(bottom = 16.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                                )
-                            ) {
-                                Column(modifier = Modifier.padding(16.dp)) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Outlined.Info,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(20.dp),
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = "Word Document",
-                                            fontSize = 16.sp,
-                                            fontWeight = FontWeight.Medium
-                                        )
-                                    }
-
-                                    Spacer(modifier = Modifier.height(8.dp))
-
-                                    Text(
-                                        text = "• No preview available for Word documents\n• Entire document will be printed\n• Document will require manual processing",
-                                        fontSize = 14.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        lineHeight = 20.sp
-                                    )
-                                }
-                            }
-                        }
-
-
-                        // In DocumentUploadScreen.kt - Add this after file selection
-                        if (uiState.needsUserPageInput) {
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(bottom = 16.dp)
-                            ) {
-                                Column(modifier = Modifier.padding(16.dp)) {
-                                    Text(
-                                        text = "Unable to detect page count automatically",
-                                        fontWeight = FontWeight.Medium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-
-                                    Spacer(modifier = Modifier.height(8.dp))
-
-                                    OutlinedTextField(
-                                        value = uiState.userInputPageCount.toString().takeIf { it != "0" } ?: "",
-                                        onValueChange = { value ->
-                                            val pages = value.toIntOrNull()?.coerceAtLeast(1) ?: 0
-                                            viewModel.updateUserPageCount(pages)
-                                        },
-                                        label = { Text("Number of pages") },
-                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                        singleLine = true,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                }
-                            }
-                        }
-
-                        // Toggle for Print Settings
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = "Print Settings",
-                                fontWeight = FontWeight.Medium,
-                                fontSize = 16.sp
-                            )
-
-                            Switch(
-                                checked = showPrintSettings,
-                                onCheckedChange = { showPrintSettings = it }
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Expandable Print Settings Section
-            AnimatedVisibility(
-                visible = uiState.selectedFile != null && showPrintSettings,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 16.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Color Mode Section
                         Text(
-                            text = "Color Mode",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
-                            modifier = Modifier.padding(bottom = 8.dp)
+                            text = "Documents to Print",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
                         )
 
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 16.dp),
-                            horizontalArrangement = Arrangement.SpaceEvenly
-                        ) {
-                            ColorMode.entries.forEach { mode ->
-                                FilterChip(
-                                    selected = uiState.printSettings.colorMode == mode,
-                                    onClick = {
-                                        viewModel.updatePrintSettings(
-                                            uiState.printSettings.copy(colorMode = mode)
-                                        )
-                                    },
-                                    label = {
-                                        Text(
-                                            "${mode.displayName} (₹${if (mode == ColorMode.COLOR) "5" else "2"}/page)"
-                                        )
-                                    }
-                                )
-                            }
-                        }
-
-                        HorizontalDivider(
-                            modifier = Modifier.padding(vertical = 8.dp)
-                        )
-
-
-                        // Orientation Section (NEW)
-                        Text(
-                            text = "Orientation",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
-                            modifier = Modifier.padding(bottom = 8.dp, top = 8.dp)
-                        )
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 16.dp),
-                            horizontalArrangement = Arrangement.SpaceEvenly
-                        ) {
-                            Orientation.entries.forEach { orientation ->
-                                FilterChip(
-                                    selected = uiState.printSettings.orientation == orientation,
-                                    onClick = {
-                                        viewModel.updatePrintSettings(
-                                            uiState.printSettings.copy(orientation = orientation)
-                                        )
-                                    },
-                                    label = { Text(orientation.displayName) }
-                                )
-                            }
-                        }
-
-                        HorizontalDivider(
-                            modifier = Modifier.padding(vertical = 8.dp)
-                        )
-
-                        AnimatedVisibility(
-                            visible = uiState.fileType == FileType.PDF, // Only show for PDF
-                            enter = fadeIn() + expandVertically(),
-                            exit = fadeOut() + shrinkVertically()
-                        ) {
-                            Column {
-                                Text(
-                                    text = "Pages to Print",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    modifier = Modifier.padding(bottom = 8.dp, top = 8.dp)
-                                )
-
-                                Column(modifier = Modifier.padding(bottom = 16.dp)) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceEvenly
-                                    ) {
-                                        PageSelection.entries.forEach { selection ->
-                                            FilterChip(
-                                                selected = uiState.printSettings.pagesToPrint == selection,
-                                                onClick = {
-                                                    viewModel.updatePrintSettings(
-                                                        uiState.printSettings.copy(pagesToPrint = selection)
-                                                    )
-                                                },
-                                                label = { Text(selection.displayName) }
-                                            )
-                                        }
-                                    }
-
-                                    AnimatedVisibility(
-                                        visible = uiState.printSettings.pagesToPrint == PageSelection.CUSTOM,
-                                        enter = fadeIn() + expandVertically(),
-                                        exit = fadeOut() + shrinkVertically()
-                                    ) {
-                                        val isValidRange = remember(uiState.printSettings.customPages) {
-                                            isValidPageRange(uiState.printSettings.customPages)
-                                        }
-
-                                        OutlinedTextField(
-                                            value = uiState.printSettings.customPages,
-                                            onValueChange = {
-                                                viewModel.updatePrintSettings(
-                                                    uiState.printSettings.copy(customPages = it)
-                                                )
-                                            },
-                                            label = { Text("Custom Pages") },
-                                            placeholder = { Text("e.g., 1-3,5,7-10") },
-                                            isError = uiState.printSettings.customPages.isNotEmpty() && !isValidRange,
-                                            supportingText = {
-                                                if (uiState.printSettings.customPages.isNotEmpty() && !isValidRange) {
-                                                    Text("Invalid page range format")
-                                                } else {
-                                                    Text("Specify individual pages or ranges (e.g., 1,3,5-7)")
-                                                }
-                                            },
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(top = 8.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        HorizontalDivider(
-                            modifier = Modifier.padding(vertical = 8.dp)
-                        )
-
-                        // Copies Section - Fixed numeric input
-                        Text(
-                            text = "Number of Copies",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
-                            modifier = Modifier.padding(vertical = 8.dp)
-                        )
-
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(bottom = 16.dp)
-                        ) {
-                            IconButton(
-                                onClick = {
-                                    val newValue = (uiState.printSettings.copies - 1).coerceAtLeast(1)
-                                    viewModel.updatePrintSettings(
-                                        uiState.printSettings.copy(copies = newValue)
-                                    )
-                                    copiesString.value = newValue.toString()
-                                },
-                                enabled = uiState.printSettings.copies > 1
-                            ) {
-                                Text("-", fontSize = 20.sp)
-                            }
-
-                            OutlinedTextField(
-                                value = copiesString.value,
-                                onValueChange = { value ->
-                                    copiesString.value = value
-                                    val newCopies = value.toIntOrNull()?.coerceIn(1, 10) ?: uiState.printSettings.copies
-                                    if (value.isEmpty() || newCopies.toString() == value) {
-                                        viewModel.updatePrintSettings(
-                                            uiState.printSettings.copy(copies = if (value.isEmpty()) 1 else newCopies)
-                                        )
-                                    }
-                                },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                modifier = Modifier.width(80.dp),
-                                textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Center),
-                                singleLine = true
-                            )
-
-                            IconButton(
-                                onClick = {
-                                    val newValue = (uiState.printSettings.copies + 1).coerceAtMost(10)
-                                    viewModel.updatePrintSettings(
-                                        uiState.printSettings.copy(copies = newValue)
-                                    )
-                                    copiesString.value = newValue.toString()
-                                },
-                                enabled = uiState.printSettings.copies < 10
-                            ) {
-                                Text("+", fontSize = 20.sp)
-                            }
-
-                            Spacer(modifier = Modifier.width(16.dp))
-
+                        if (uiState.documents.isNotEmpty()) {
                             Text(
-                                text = "Maximum: 10 copies",
-                                fontSize = 12.sp,
+                                text = "${uiState.documents.size} file${if (uiState.documents.size != 1) "s" else ""}",
+                                fontSize = 14.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                    }
 
-                        // Other settings like paperSize, orientation, quality would go here
-                        // Simplified for clarity, add them as needed
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    if (uiState.documents.isEmpty()) {
+                        // Initial file selection
+                        FileSelectionPrompt(
+                            onSelectFiles = {
+                                multipleFilePickerLauncher.launch("*/*")
+                            }
+                        )
+                    } else {
+                        // Show current file type and add more option
+                        CurrentFileTypeHeader(
+                            fileType = uiState.currentFileType!!,
+                            documentCount = uiState.documents.size,
+                            canAddMore = uiState.canAddMoreFiles,
+                            onAddMore = {
+                                multipleFilePickerLauncher.launch("*/*")
+                            },
+                            onClearAll = {
+                                viewModel.clearState()
+                            }
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Documents List
+                        DocumentsList(
+                            documents = uiState.documents,
+                            onRemoveDocument = viewModel::removeDocument,
+                            onToggleExpansion = viewModel::toggleDocumentExpansion,
+                            onUpdateSettings = viewModel::updateDocumentSettings,
+                            onUpdatePageCount = viewModel::updateDocumentPageCount
+                        )
                     }
                 }
             }
 
-            // Price Display - Enhanced UI
-            if (uiState.selectedFile != null) {
+            // Total Price Display
+            if (uiState.documents.isNotEmpty()) {
                 Card(
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.primaryContainer
@@ -647,33 +192,31 @@ fun DocumentUploadScreen(
                         )
 
                         Text(
-                            text = "₹${String.format("%.2f", uiState.calculatedPrice)}",
+                            text = "₹${String.format("%.2f", uiState.totalCalculatedPrice)}",
                             fontSize = 28.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
 
-                        if (uiState.printSettings.copies > 1) {
-                            Text(
-                                text = "(₹${String.format("%.2f", uiState.calculatedPrice / uiState.printSettings.copies)} × ${uiState.printSettings.copies} copies)",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                            )
-                        }
+                        Text(
+                            text = "Total: ${uiState.documents.sumOf { it.getEffectivePageCount() }} pages • ${uiState.documents.size} documents",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                        )
                     }
                 }
 
-                // Action Buttons - Improved layout and feedback
+                // Action Buttons
                 Column(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Button(
                         onClick = {
                             viewModel.submitOrderWithPayment { orderId ->
-                                onNavigateToPayment(orderId, uiState.calculatedPrice, uiState.customerPhone)
+                                onNavigateToPayment(orderId, uiState.totalCalculatedPrice, uiState.customerPhone)
                             }
                         },
-                        enabled = !uiState.isUploading && uiState.selectedFile != null,
+                        enabled = !uiState.isUploading && uiState.documents.isNotEmpty(),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp)
@@ -684,6 +227,8 @@ fun DocumentUploadScreen(
                                 color = MaterialTheme.colorScheme.onPrimary,
                                 strokeWidth = 2.dp
                             )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Uploading... ${(uiState.uploadProgress * 100).toInt()}%")
                         } else {
                             Icon(
                                 imageVector = Icons.Default.Upload,
@@ -695,26 +240,19 @@ fun DocumentUploadScreen(
                         }
                     }
 
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    OutlinedButton(
+                        onClick = viewModel::submitOrderWithoutPayment,
+                        enabled = !uiState.isUploading,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
                     ) {
-                        OutlinedButton(
-                            onClick = viewModel::submitOrderWithoutPayment,
-                            enabled = !uiState.isUploading && showPrintSettings,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp)
-                        ) {
-                            Text("Upload Without Payment")
-                        }
-
+                        Text("Upload Without Payment")
                     }
                 }
             }
 
-            // Error display with improved visibility
+            // Error display
             AnimatedVisibility(
                 visible = uiState.error != null,
                 enter = fadeIn() + expandVertically(),
@@ -751,218 +289,439 @@ fun DocumentUploadScreen(
 }
 
 @Composable
-private fun PdfPreview(
-    uri: Uri,
-    currentPage: Int,
-    totalPages: Int,
-    colorMode: ColorMode,
-    orientation: Orientation,
-    onPageChange: (Int) -> Unit,
-    modifier: Modifier = Modifier
+private fun FileSelectionPrompt(
+    onSelectFiles: () -> Unit
 ) {
-    val context = LocalContext.current
-    var bitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var isLoading by remember { mutableStateOf(true) }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+        ),
+        border = BorderStroke(
+            width = 2.dp,
+            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                imageVector = Icons.Default.Upload,
+                contentDescription = null,
+                modifier = Modifier.size(48.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
 
-    LaunchedEffect(uri, currentPage, colorMode, orientation) {
-        isLoading = true
-        try {
-            context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
-                PdfRenderer(pfd).use { renderer ->
-                    if (currentPage < renderer.pageCount) {
-                        renderer.openPage(currentPage).use { page ->
-                            val displayMetrics = context.resources.displayMetrics
-                            val baseWidth = (displayMetrics.widthPixels * 0.8).toInt()
+            Spacer(modifier = Modifier.height(16.dp))
 
-                            // Adjust dimensions based on orientation
-                            val (width, height) = when (orientation) {
-                                Orientation.PORTRAIT -> {
-                                    val h = (baseWidth * page.height / page.width.toFloat()).toInt()
-                                    baseWidth to h
-                                }
-                                Orientation.LANDSCAPE -> {
-                                    val h = (baseWidth * page.width / page.height.toFloat()).toInt()
-                                    baseWidth to h
-                                }
-                            }
+            Text(
+                text = "Select documents to print",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 16.sp,
+                textAlign = TextAlign.Center,
+                fontWeight = FontWeight.Medium
+            )
 
-                            val originalBitmap = createBitmap(width, height)
+            Spacer(modifier = Modifier.height(8.dp))
 
-                            // Render based on orientation
-                            when (orientation) {
-                                Orientation.PORTRAIT -> {
-                                    page.render(originalBitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                                }
-                                Orientation.LANDSCAPE -> {
-                                    // Create a rotated bitmap
-                                    val tempBitmap = createBitmap(height, width)
-                                    page.render(tempBitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+            Text(
+                text = "You can select multiple files of the same type",
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                fontSize = 14.sp,
+                textAlign = TextAlign.Center
+            )
 
-                                    val matrix = Matrix().apply { postRotate(90f) }
-                                    val rotatedBitmap = Bitmap.createBitmap(tempBitmap, 0, 0, tempBitmap.width, tempBitmap.height, matrix, true)
+            Spacer(modifier = Modifier.height(24.dp))
 
-                                    val canvas = Canvas(originalBitmap)
-                                    val srcRect = Rect(0, 0, rotatedBitmap.width, rotatedBitmap.height)
-                                    val destRect = Rect(0, 0, width, height)
-                                    canvas.drawBitmap(rotatedBitmap, srcRect, destRect, null)
+            Button(
+                onClick = onSelectFiles,
+                modifier = Modifier.fillMaxWidth(0.6f),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.FolderOpen,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Browse Files",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
 
-                                    tempBitmap.recycle()
-                                    rotatedBitmap.recycle()
-                                }
-                            }
+            Spacer(modifier = Modifier.height(8.dp))
 
-                            // Apply color mode filter
-                            val finalBitmap = when (colorMode) {
-                                ColorMode.COLOR -> originalBitmap
-                                ColorMode.BW -> {
-                                    applyGrayscaleFilter(originalBitmap)
-                                }
-                            }
+            Text(
+                text = "Supported: PDF, Word (DOCX) • Max 10 files",
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                fontSize = 12.sp
+            )
+        }
+    }
+}
 
-                            bitmap = finalBitmap
+@Composable
+private fun CurrentFileTypeHeader(
+    fileType: FileType,
+    documentCount: Int,
+    canAddMore: Boolean,
+    onAddMore: () -> Unit,
+    onClearAll: () -> Unit
+) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = if (fileType == FileType.PDF) Icons.Outlined.Description else Icons.Default.Description,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = "${fileType.displayName} Documents",
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 16.sp
+                    )
+                    Text(
+                        text = "$documentCount selected",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (canAddMore) {
+                    IconButton(onClick = onAddMore) {
+                        Icon(Icons.Default.Add, contentDescription = "Add more files")
+                    }
+                }
+                IconButton(onClick = onClearAll) {
+                    Icon(Icons.Default.Close, contentDescription = "Clear all")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DocumentsList(
+    documents: List<DocumentItem>,
+    onRemoveDocument: (String) -> Unit,
+    onToggleExpansion: (String) -> Unit,
+    onUpdateSettings: (String, PrintSettings) -> Unit,
+    onUpdatePageCount: (String, Int) -> Unit
+) {
+    LazyColumn(
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.height(400.dp) // Fixed height to prevent scroll issues
+    ) {
+        items(documents, key = { it.id }) { document ->
+            DocumentCard(
+                document = document,
+                onRemove = { onRemoveDocument(document.id) },
+                onToggleExpansion = { onToggleExpansion(document.id) },
+                onUpdateSettings = { settings -> onUpdateSettings(document.id, settings) },
+                onUpdatePageCount = { pageCount -> onUpdatePageCount(document.id, pageCount) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun DocumentCard(
+    document: DocumentItem,
+    onRemove: () -> Unit,
+    onToggleExpansion: () -> Unit,
+    onUpdateSettings: (PrintSettings) -> Unit,
+    onUpdatePageCount: (Int) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            // Document Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // PDF Preview or DOCX Icon
+                    if (document.fileType == FileType.PDF && document.previewBitmap != null) {
+                        Image(
+                            bitmap = document.previewBitmap.asImageBitmap(),
+                            contentDescription = "PDF Preview",
+                            modifier = Modifier
+                                .size(60.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(8.dp)),
+                            contentScale = ContentScale.Fit
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(60.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (document.fileType == FileType.PDF) Icons.Outlined.Description else Icons.Default.Description,
+                                contentDescription = null,
+                                modifier = Modifier.size(30.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
+                    }
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = document.fileName,
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 14.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        val info = when (document.fileType) {
+                            FileType.PDF -> "${formatFileSize(document.fileSize)} • ${document.getEffectivePageCount()} pages"
+                            FileType.DOCX -> "${formatFileSize(document.fileSize)} • Word Document"
+                        }
+
+                        Text(
+                            text = info,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Text(
+                            text = "₹${String.format("%.2f", document.calculatedPrice)}",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    IconButton(onClick = onToggleExpansion) {
+                        Icon(
+                            imageVector = if (document.isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = if (document.isExpanded) "Collapse" else "Expand"
+                        )
+                    }
+                    IconButton(onClick = onRemove) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = "Remove",
+                            tint = MaterialTheme.colorScheme.error
+                        )
                     }
                 }
             }
-        } catch (e: Exception) {
-            println("Error loading PDF preview: ${e.message}")
-            // Handle error
-        }
-        isLoading = false
-    }
 
-    Column(modifier = modifier) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(300.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .border(
-                    1.dp,
-                    MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                    RoundedCornerShape(8.dp)
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            if (isLoading) {
-                CircularProgressIndicator()
-            } else {
-                bitmap?.let { bmp ->
-                    Image(
-                        bitmap = bmp.asImageBitmap(),
-                        contentDescription = "PDF Preview",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Fit
+            // Page Count Input for PDFs with detection issues
+            if (document.needsUserPageInput) {
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = document.userInputPageCount.toString().takeIf { it != "0" } ?: "",
+                    onValueChange = { value ->
+                        val pages = value.toIntOrNull()?.coerceAtLeast(1) ?: 0
+                        onUpdatePageCount(pages)
+                    },
+                    label = { Text("Number of pages") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            // Expanded Settings Panel
+            AnimatedVisibility(
+                visible = document.isExpanded,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                Column(modifier = Modifier.padding(top = 16.dp)) {
+                    HorizontalDivider()
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    PrintSettingsPanel(
+                        settings = document.printSettings,
+                        fileType = document.fileType,
+                        onSettingsChange = onUpdateSettings
                     )
                 }
             }
         }
+    }
+}
 
-        // Preview note
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 8.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-            )
+@Composable
+private fun PrintSettingsPanel(
+    settings: PrintSettings,
+    fileType: FileType,
+    onSettingsChange: (PrintSettings) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        // Color Mode
+        Text(
+            text = "Color Mode",
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            Row(
-                modifier = Modifier.padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Info,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Preview simulation - actual print output may vary",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+            ColorMode.entries.forEach { mode ->
+                FilterChip(
+                    selected = settings.colorMode == mode,
+                    onClick = {
+                        onSettingsChange(settings.copy(colorMode = mode))
+                    },
+                    label = {
+                        Text("${mode.displayName} (₹${if (mode == ColorMode.COLOR) "5" else "2"}/page)")
+                    }
                 )
             }
         }
 
-        if (totalPages > 1) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(
-                    onClick = { if (currentPage > 0) onPageChange(currentPage - 1) },
-                    enabled = currentPage > 0
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Previous")
-                }
-
-                Text(
-                    text = "Page ${currentPage + 1} of $totalPages",
-                    style = MaterialTheme.typography.bodyMedium
+        // Orientation
+        Text(
+            text = "Orientation",
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            Orientation.entries.forEach { orientation ->
+                FilterChip(
+                    selected = settings.orientation == orientation,
+                    onClick = {
+                        onSettingsChange(settings.copy(orientation = orientation))
+                    },
+                    label = { Text(orientation.displayName) }
                 )
+            }
+        }
 
-                IconButton(
-                    onClick = { if (currentPage < totalPages - 1) onPageChange(currentPage + 1) },
-                    enabled = currentPage < totalPages - 1
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next")
+        // Pages to Print (PDF only)
+        if (fileType == FileType.PDF) {
+            Text(
+                text = "Pages to Print",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                PageSelection.entries.forEach { selection ->
+                    FilterChip(
+                        selected = settings.pagesToPrint == selection,
+                        onClick = {
+                            onSettingsChange(settings.copy(pagesToPrint = selection))
+                        },
+                        label = { Text(selection.displayName) }
+                    )
                 }
             }
+
+            AnimatedVisibility(visible = settings.pagesToPrint == PageSelection.CUSTOM) {
+                OutlinedTextField(
+                    value = settings.customPages,
+                    onValueChange = {
+                        onSettingsChange(settings.copy(customPages = it))
+                    },
+                    label = { Text("Custom Pages") },
+                    placeholder = { Text("e.g., 1-3,5,7-10") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+
+        // Copies
+        Text(
+            text = "Copies",
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium
+        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            IconButton(
+                onClick = {
+                    val newCopies = (settings.copies - 1).coerceAtLeast(1)
+                    onSettingsChange(settings.copy(copies = newCopies))
+                },
+                enabled = settings.copies > 1
+            ) {
+                Text("-", fontSize = 20.sp)
+            }
+
+            Text(
+                text = settings.copies.toString(),
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.width(40.dp),
+                textAlign = TextAlign.Center
+            )
+
+            IconButton(
+                onClick = {
+                    val newCopies = (settings.copies + 1).coerceAtMost(10)
+                    onSettingsChange(settings.copy(copies = newCopies))
+                },
+                enabled = settings.copies < 10
+            ) {
+                Text("+", fontSize = 20.sp)
+            }
+
+            Text(
+                text = "(Max: 10)",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
 
-private fun applyGrayscaleFilter(originalBitmap: Bitmap): Bitmap {
-    val grayscaleBitmap = createBitmap(originalBitmap.width, originalBitmap.height)
-
-    val canvas = Canvas(grayscaleBitmap)
-    val paint = Paint().apply {
-        colorFilter = ColorMatrixColorFilter(ColorMatrix().apply {
-            setSaturation(0f) // Remove all color saturation
-        })
-    }
-
-    canvas.drawBitmap(originalBitmap, 0f, 0f, paint)
-    return grayscaleBitmap
-}
-
-// Helper function to format file size
 @SuppressLint("DefaultLocale")
 private fun formatFileSize(sizeInBytes: Long): String {
     return when {
         sizeInBytes < 1024 -> "$sizeInBytes B"
         sizeInBytes < 1024 * 1024 -> "${sizeInBytes / 1024} KB"
         else -> String.format("%.1f MB", sizeInBytes / (1024.0 * 1024.0))
-    }
-}
-
-// Validate page range input
-private fun isValidPageRange(pageRange: String): Boolean {
-    if (pageRange.isEmpty()) return true
-
-    try {
-        val parts = pageRange.split(",")
-        for (part in parts) {
-            val trimmed = part.trim()
-            if (trimmed.contains("-")) {
-                val range = trimmed.split("-")
-                if (range.size != 2) return false
-                val start = range[0].trim().toInt()
-                val end = range[1].trim().toInt()
-                if (start <= 0 || end <= 0 || start > end) return false
-            } else {
-                val page = trimmed.toInt()
-                if (page <= 0) return false
-            }
-        }
-        return true
-    } catch (e: Exception) {
-        println("Invalid page range format: ${e.message}")
-        return false
     }
 }

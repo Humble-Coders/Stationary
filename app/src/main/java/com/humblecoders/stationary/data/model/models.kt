@@ -1,20 +1,50 @@
+// Updated models.kt - Add support for multiple documents
+
 package com.humblecoders.stationary.data.model
 
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.PropertyName
 
-// Add this field to the PrintOrder data class in models.kt
+// New data class for individual documents
+data class DocumentItem(
+    val id: String = "",
+    val uri: android.net.Uri? = null,
+    val fileName: String = "",
+    val fileSize: Long = 0,
+    val fileType: FileType = FileType.PDF,
+    val pageCount: Int = 0,
+    val needsUserPageInput: Boolean = false,
+    val userInputPageCount: Int = 0,
+    val printSettings: PrintSettings = PrintSettings(),
+    val calculatedPrice: Double = 0.0,
+    val previewBitmap: android.graphics.Bitmap? = null,
+    val isExpanded: Boolean = false // For UI expansion state
+) {
+    // Helper to get effective page count
+    fun getEffectivePageCount(): Int {
+        return when (fileType) {
+            FileType.PDF -> {
+                if (needsUserPageInput) userInputPageCount else pageCount
+            }
+            FileType.DOCX -> 1
+        }
+    }
+}
+
+// In models.kt - Replace the PrintOrder data class with these changes
 
 data class PrintOrder(
     val orderId: String = "",
     val customerId: String = "",
     val customerPhone: String = "",
-    val documentName: String = "",
-    val documentUrl: String = "",
-    val documentSize: Long = 0,
-    val fileType: String = "PDF", // Add this field with default value
-    val pageCount: Int = 0,
-    val printSettings: PrintSettings? = null,
+    val documentName: List<String> = emptyList(), // Changed to List<String>
+    val documentUrl: List<String> = emptyList(), // Changed to List<String>
+    val documentSize: Long = 0, // Total size of all documents
+    val fileType: String = "PDF",
+    val pageCount: Int = 0, // Total pages across all documents
+    val printSettings: List<Map<String, Any>> = emptyList(), // Changed to List<Map<String, Any>>
+    val individualDocuments: List<Map<String, Any>> = emptyList(), // Changed to List<Map<String, Any>>
+    val documentCount: Int = 0, // NEW FIELD - number of documents
     val paymentStatus: PaymentStatus = PaymentStatus.UNPAID,
     val paymentAmount: Double = 0.0,
     val razorpayOrderId: String = "",
@@ -38,16 +68,16 @@ data class PrintOrder(
     val createdAt: Timestamp = Timestamp.now(),
     val updatedAt: Timestamp = Timestamp.now()
 ) {
-    // Add explicit getter for isPaid to fix Firestore mapping
     @PropertyName("isPaid")
     fun getIsPaid(): Boolean = isPaid
 
-    // Add explicit setter for isPaid
     @PropertyName("isPaid")
     fun setIsPaid(value: Boolean) {
         // This is handled by the copy constructor
     }
 }
+
+// Rest of the existing models remain the same...
 
 data class ShopSettings(
     val shopId: String = "default",
@@ -60,7 +90,6 @@ data class ShopSettings(
 
     val pricePerPage: PricePerPage = PricePerPage()
 ) {
-    // No-arg constructor for Firestore
     constructor() : this(
         shopId = "default",
         shopOpen = true,
@@ -78,8 +107,6 @@ data class PrintSettings(
     val orientation: Orientation = Orientation.PORTRAIT,
     val quality: Quality = Quality.NORMAL
 )
-
-
 
 data class PricePerPage(
     val bw: Double = 2.0,
@@ -126,7 +153,6 @@ enum class PaymentStatus {
 enum class OrderStatus {
     SUBMITTED, QUEUED, PRINTED
 }
-
 
 sealed class PaymentResult {
     data class Success(

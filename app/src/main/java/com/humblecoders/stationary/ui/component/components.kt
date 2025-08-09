@@ -28,6 +28,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import com.humblecoders.stationary.data.model.ColorMode
 import com.humblecoders.stationary.data.model.OrderStatus
 import com.humblecoders.stationary.data.model.PrintOrder
@@ -41,12 +43,11 @@ fun OrderCard(
     order: PrintOrder,
     onClick: (PrintOrder) -> Unit,
     modifier: Modifier = Modifier,
-    // Add these parameters to get status from ViewModel
     getPaymentStatusDisplay: (PrintOrder) -> String,
     getOrderStatusDisplay: (PrintOrder) -> String
 ) {
     val cardColor = getOrderCardColor(order)
-    val statusText = getOrderStatusDisplay(order) // Use the actual order status
+    val statusText = getOrderStatusDisplay(order)
     val statusIcon = getOrderStatusIcon(order)
 
     val animatedColor by animateColorAsState(
@@ -89,13 +90,13 @@ fun OrderCard(
                 Spacer(modifier = Modifier.width(12.dp))
 
                 Column(
-                    modifier = Modifier.weight(1f) // Take remaining space
+                    modifier = Modifier.weight(1f)
                 ) {
                     Text(
-                        text = order.documentName,
+                        text = getDisplayDocumentName(order),
                         fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold,
-                        maxLines = 2, // Allow 2 lines for longer names
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
 
@@ -109,7 +110,7 @@ fun OrderCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Status Chip - Separate row
+            // Status Chip
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Start
@@ -132,7 +133,6 @@ fun OrderCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Left Column - Order details
                 Column {
                     OrderDetail(
                         label = "Pages",
@@ -141,7 +141,6 @@ fun OrderCard(
 
                     Spacer(modifier = Modifier.height(4.dp))
 
-                    // Show payment status
                     OrderDetail(
                         label = "Payment",
                         value = getPaymentStatusDisplay(order)
@@ -149,18 +148,22 @@ fun OrderCard(
 
                     Spacer(modifier = Modifier.height(4.dp))
 
-                    order.printSettings?.let { settings ->
+                    // Show document count if multiple documents
+                    val documentCount = getDocumentCount(order)
+                    if (documentCount > 1) {
                         OrderDetail(
-                            label = "Print Settings",
-                            value = "${settings.colorMode.displayName} • ${settings.copies} ${if (settings.copies > 1) "copies" else "copy"}"
+                            label = "Documents",
+                            value = "$documentCount files"
                         )
-                    } ?: OrderDetail(
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
+
+                    OrderDetail(
                         label = "Print Settings",
-                        value = "Not configured"
+                        value = getPrintSettingsDisplay(order)
                     )
                 }
 
-                // Right Column - Price and date
                 Column(horizontalAlignment = Alignment.End) {
                     if (order.paymentAmount > 0) {
                         Text(
@@ -182,9 +185,9 @@ fun OrderCard(
                 }
             }
 
-            // Action indicators - update logic based on actual status
+            // Action indicators
             val isPaid = getPaymentStatusDisplay(order) == "Paid"
-            val hasSettings = order.printSettings != null
+            val hasSettings = order.printSettings != null || order.individualDocuments.isNotEmpty()
 
             if (!isPaid || !hasSettings) {
                 Spacer(modifier = Modifier.height(16.dp))
@@ -236,7 +239,8 @@ fun OrderCard(
         }
     }
 }
-// Update these helper functions to use actual enum values
+
+
 private fun getOrderCardColor(order: PrintOrder): Color {
     return when (order.orderStatus.toString()) {
         "PRINTED" -> Color(0xFF4CAF50).copy(alpha = 0.05f) // Green
@@ -322,10 +326,6 @@ private fun StatusChip(
     }
 }
 
-
-
-
-
 private fun formatDate(date: Date): String {
     val formatter = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
     return formatter.format(date)
@@ -405,6 +405,60 @@ fun ShopClosedCard(
                     Text("View Hours")
                 }
             }
+        }
+    }
+}
+
+private fun getDocumentCount(order: PrintOrder): Int {
+    return order.documentCount.takeIf { it > 0 } ?: run {
+        // Fallback for older orders without documentCount field
+        when {
+            order.documentName.isNotEmpty() -> order.documentName.size
+            order.documentUrl.isNotEmpty() -> order.documentUrl.size
+            order.individualDocuments.isNotEmpty() -> order.individualDocuments.size
+            else -> 1
+        }
+    }
+}
+
+// Add this helper function to display document names properly
+private fun getDisplayDocumentName(order: PrintOrder): String {
+    return when {
+        order.documentName.size == 1 -> order.documentName.first()
+        order.documentName.size > 1 -> "${order.documentCount} ${getFileTypeFromExtension(order.fileType)} files"
+        else -> order.documentName.firstOrNull() ?: "Unknown document"
+    }
+}
+
+// Helper function to get file type display name
+private fun getFileTypeFromExtension(extension: String): String {
+    return when (extension) {
+        ".pdf" -> "PDF"
+        ".docx" -> "Word"
+        else -> "Document"
+    }
+}
+
+private fun getPrintSettingsDisplay(order: PrintOrder): String {
+    return when {
+        order.printSettings.isNotEmpty() -> {
+            if (order.printSettings.size == 1) {
+                // Single document settings
+                val settings = order.printSettings.first()
+                val colorMode = settings["colorMode"] as? String ?: "BW"
+                val copies = (settings["copies"] as? Number)?.toInt() ?: 1
+                val colorModeDisplay = if (colorMode == "COLOR") "Color" else "Black & White"
+                "$colorModeDisplay • $copies ${if (copies > 1) "copies" else "copy"}"
+            } else {
+                // Multiple documents with individual settings
+                "Individual settings (${order.printSettings.size} documents)"
+            }
+        }
+        order.individualDocuments.isNotEmpty() -> {
+            "Individual settings"
+        }
+        else -> {
+            "Not configured"
         }
     }
 }

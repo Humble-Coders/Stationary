@@ -81,6 +81,9 @@ dependencies {
     // Image loading
     implementation("io.coil-kt:coil-compose:2.5.0");
 
+    implementation ("com.google.code.gson:gson:2.10.1")
+
+
     // REMOVED: Duplicate Material3 dependency
     // implementation("androidx.compose.material3:material3:1.1.2")
 

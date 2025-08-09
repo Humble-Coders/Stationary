@@ -4,6 +4,8 @@ import android.net.Uri
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.snapshots
 import com.google.firebase.storage.FirebaseStorage
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import com.humblecoders.stationary.data.model.ColorMode
 import com.humblecoders.stationary.data.model.FileType
 import com.humblecoders.stationary.data.model.PageSelection
@@ -22,6 +24,7 @@ class PrintOrderRepository(firestore: FirebaseFirestore, storage: FirebaseStorag
 
     private val ordersCollection = firestore.collection("print_orders")
     private val storageRef = storage.reference.child("documents")
+    private val gson = Gson()
 
     suspend fun uploadDocument(uri: Uri): String {
         val timestamp = System.currentTimeMillis()
@@ -33,34 +36,43 @@ class PrintOrderRepository(firestore: FirebaseFirestore, storage: FirebaseStorag
         return uploadTask.storage.downloadUrl.await().toString()
     }
 
-
-// Add this to PrintOrderRepository.kt
+    // Updated method to handle multiple documents
+    suspend fun uploadMultipleDocuments(uris: List<Uri>): List<String> {
+        val urls = mutableListOf<String>()
+        for (uri in uris) {
+            val url = uploadDocument(uri)
+            urls.add(url)
+        }
+        return urls
+    }
 
     private fun PrintOrder.toFirestoreMap(): Map<String, Any?> {
         return mapOf(
             "orderId" to orderId,
             "customerId" to customerId,
             "customerPhone" to customerPhone,
-            "documentName" to documentName,
-            "documentUrl" to documentUrl,
+            "documentName" to documentName, // Now array
+            "documentUrl" to documentUrl, // Now array
             "documentSize" to documentSize,
             "pageCount" to pageCount,
-            "printSettings" to printSettings,
+            "printSettings" to printSettings, // Now array of maps
+            "individualDocuments" to individualDocuments, // Now array of maps
+            "documentCount" to documentCount, // NEW FIELD
             "paymentStatus" to paymentStatus,
             "paymentAmount" to paymentAmount,
             "razorpayOrderId" to razorpayOrderId,
             "razorpayPaymentId" to razorpayPaymentId,
             "orderStatus" to orderStatus,
             "hasSettings" to hasSettings,
-            "isPaid" to isPaid,  // Keep only this, remove "paid"
+            "isPaid" to isPaid,
             "canAutoPrint" to canAutoPrint,
             "queuePriority" to queuePriority,
             "createdAt" to createdAt,
-            "updatedAt" to updatedAt
+            "updatedAt" to updatedAt,
+            "fileType" to fileType
         )
     }
 
-    // Then use in createOrder:
     suspend fun createOrder(order: PrintOrder): String {
         val orderId = if (order.orderId.isEmpty()) UUID.randomUUID().toString() else order.orderId
         val orderWithId = order.copy(orderId = orderId)
@@ -83,8 +95,6 @@ class PrintOrderRepository(firestore: FirebaseFirestore, storage: FirebaseStorag
         ordersCollection.document(orderId).update(updates).await()
     }
 
-
-
     fun observeUserOrders(customerId: String): Flow<List<PrintOrder>> {
         return ordersCollection
             .whereEqualTo("customerId", customerId)
@@ -97,7 +107,7 @@ class PrintOrderRepository(firestore: FirebaseFirestore, storage: FirebaseStorag
                         } catch (e: Exception) {
                             null
                         }
-                    }.sortedByDescending { it.createdAt.toDate() } // Sort in code instead
+                    }.sortedByDescending { it.createdAt.toDate() }
                 } catch (e: Exception) {
                     emptyList()
                 }
@@ -107,6 +117,75 @@ class PrintOrderRepository(firestore: FirebaseFirestore, storage: FirebaseStorag
             }
     }
 
+    fun calculateTotalPrice(individualDocuments: List<Map<String, Any>>, shopSettings: ShopSettings): Double {
+        return individualDocuments.sumOf { docMap ->
+            val printSettingsMap = docMap["printSettings"] as? Map<String, Any>
+            val printSettings = printSettingsMap?.let { parseMapToPrintSettings(it) } ?: PrintSettings()
+            val pageCount = (docMap["pageCount"] as? Number)?.toInt() ?: 1
+            val fileTypeStr = (docMap["fileType"] as? String) ?: ".pdf"
+            val fileType = if (fileTypeStr == ".docx") FileType.DOCX else FileType.PDF
+
+            calculatePrice(printSettings, pageCount, shopSettings, fileType)
+        }
+    }
+
+    private fun parseMapToPrintSettings(map: Map<String, Any>): PrintSettings {
+        return try {
+            PrintSettings(
+                colorMode = parseColorMode(map["colorMode"] as? String),
+                pagesToPrint = parsePageSelection(map["pagesToPrint"] as? String),
+                customPages = map["customPages"] as? String ?: "",
+                copies = (map["copies"] as? Number)?.toInt() ?: 1,
+                paperSize = parsePaperSize(map["paperSize"] as? String),
+                orientation = parseOrientation(map["orientation"] as? String),
+                quality = parseQuality(map["quality"] as? String)
+            )
+        } catch (e: Exception) {
+            PrintSettings()
+        }
+    }
+
+    private fun parseColorMode(value: String?): ColorMode {
+        return when (value) {
+            "COLOR" -> ColorMode.COLOR
+            "BW" -> ColorMode.BW
+            else -> ColorMode.BW
+        }
+    }
+
+    private fun parsePageSelection(value: String?): PageSelection {
+        return when (value) {
+            "ALL" -> PageSelection.ALL
+            "CUSTOM" -> PageSelection.CUSTOM
+            else -> PageSelection.ALL
+        }
+    }
+
+    private fun parsePaperSize(value: String?): com.humblecoders.stationary.data.model.PaperSize {
+        return when (value) {
+            "A4" -> com.humblecoders.stationary.data.model.PaperSize.A4
+            "A3" -> com.humblecoders.stationary.data.model.PaperSize.A3
+            "LETTER" -> com.humblecoders.stationary.data.model.PaperSize.LETTER
+            else -> com.humblecoders.stationary.data.model.PaperSize.A4
+        }
+    }
+
+    private fun parseOrientation(value: String?): com.humblecoders.stationary.data.model.Orientation {
+        return when (value) {
+            "PORTRAIT" -> com.humblecoders.stationary.data.model.Orientation.PORTRAIT
+            "LANDSCAPE" -> com.humblecoders.stationary.data.model.Orientation.LANDSCAPE
+            else -> com.humblecoders.stationary.data.model.Orientation.PORTRAIT
+        }
+    }
+
+    private fun parseQuality(value: String?): com.humblecoders.stationary.data.model.Quality {
+        return when (value) {
+            "DRAFT" -> com.humblecoders.stationary.data.model.Quality.DRAFT
+            "NORMAL" -> com.humblecoders.stationary.data.model.Quality.NORMAL
+            "HIGH" -> com.humblecoders.stationary.data.model.Quality.HIGH
+            else -> com.humblecoders.stationary.data.model.Quality.NORMAL
+        }
+    }
 
     fun calculatePrice(settings: PrintSettings, pageCount: Int, shopSettings: ShopSettings, fileType: FileType? = null): Double {
         val pricePerPage = when (settings.colorMode) {

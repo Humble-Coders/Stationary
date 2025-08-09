@@ -1,13 +1,16 @@
 package com.humblecoders.stationary.ui.viewmodel
 
-// ui/viewmodel/DocumentUploadViewModel.kt
-
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.util.Log
+import androidx.core.graphics.createBitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
+import com.google.gson.Gson
+import com.humblecoders.stationary.data.model.DocumentItem
 import com.humblecoders.stationary.data.model.FileType
 import com.humblecoders.stationary.data.model.PageSelection
 import com.humblecoders.stationary.data.model.PrintOrder
@@ -16,21 +19,18 @@ import com.humblecoders.stationary.data.model.ShopSettings
 import com.humblecoders.stationary.data.repository.PrintOrderRepository
 import com.humblecoders.stationary.data.repository.ShopSettingsRepository
 import com.humblecoders.stationary.util.FileUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.util.UUID
 
 data class DocumentUploadUiState(
-    val selectedFile: Uri? = null,
-    val fileName: String = "",
-    val fileSize: Long = 0,
-    val fileType: FileType? = null,
-    val pageCount: Int = 0,
-    val needsUserPageInput: Boolean = false,
-    val userInputPageCount: Int = 0,
-    val printSettings: PrintSettings = PrintSettings(),
-    val calculatedPrice: Double = 0.0,
+    val currentFileType: FileType? = null,
+    val documents: List<DocumentItem> = emptyList(),
+    val totalCalculatedPrice: Double = 0.0,
     val isUploading: Boolean = false,
     val isShopOpen: Boolean = true,
     val uploadProgress: Float = 0f,
@@ -38,8 +38,7 @@ data class DocumentUploadUiState(
     val orderId: String? = null,
     val customerId: String = "",
     val customerPhone: String = "",
-    val showPreview: Boolean = true,
-    val currentPreviewPage: Int = 0
+    val canAddMoreFiles: Boolean = true
 )
 
 class DocumentUploadViewModel(
@@ -49,6 +48,13 @@ class DocumentUploadViewModel(
 
     private val _uiState = MutableStateFlow(DocumentUploadUiState())
     val uiState: StateFlow<DocumentUploadUiState> = _uiState.asStateFlow()
+
+    private var currentShopSettings: ShopSettings = ShopSettings()
+    private val gson = Gson()
+
+    companion object {
+        private const val MAX_DOCUMENTS = 10 // Maximum documents per upload
+    }
 
     init {
         observeShopStatus()
@@ -63,12 +69,9 @@ class DocumentUploadViewModel(
                 customerId = currentUser.uid,
                 customerPhone = currentUser.phoneNumber ?: ""
             )
-        } else {
-            Log.w("DocumentUploadVM", "No current user found during initialization")
         }
     }
 
-    // Also update the setCustomerInfo method
     fun setCustomerInfo(customerId: String, customerPhone: String) {
         Log.d("DocumentUploadVM", "Setting customer info: $customerId, phone: $customerPhone")
         _uiState.value = _uiState.value.copy(
@@ -77,94 +80,260 @@ class DocumentUploadViewModel(
         )
     }
 
-// Replace the selectFile method in DocumentUploadViewModel.kt
+    fun selectFiles(context: Context, uris: List<Uri>) {
+        if (uris.isEmpty()) return
 
-    fun selectFile(context: Context, uri: Uri) {
-        if (!FileUtils.isValidFile(context, uri)) {
-            _uiState.value = _uiState.value.copy(error = "Please select a valid PDF or Word document under 50MB")
-            return
-        }
+        viewModelScope.launch {
+            try {
+                _uiState.value = _uiState.value.copy(error = null)
 
-        val fileName = FileUtils.getFileName(context, uri)
-        val fileSize = FileUtils.getFileSize(context, uri)
+                // Determine file type from first file
+                val firstUri = uris.first()
+                val detectedFileType = when {
+                    FileUtils.isPdfFile(context, firstUri) -> FileType.PDF
+                    FileUtils.isDocxFile(context, firstUri) -> FileType.DOCX
+                    else -> {
+                        _uiState.value = _uiState.value.copy(error = "Unsupported file format")
+                        return@launch
+                    }
+                }
 
-        val fileType = when {
-            FileUtils.isPdfFile(context, uri) -> FileType.PDF
-            FileUtils.isDocxFile(context, uri) -> FileType.DOCX
-            else -> {
-                _uiState.value = _uiState.value.copy(error = "Unsupported file format")
-                return
+                // Check if we already have documents and type consistency
+                val currentDocuments = _uiState.value.documents
+                if (currentDocuments.isNotEmpty() && _uiState.value.currentFileType != detectedFileType) {
+                    _uiState.value = _uiState.value.copy(
+                        error = "Cannot mix file types. Please upload only ${_uiState.value.currentFileType?.displayName} files."
+                    )
+                    return@launch
+                }
+
+                // Check maximum document limit
+                if (currentDocuments.size + uris.size > MAX_DOCUMENTS) {
+                    _uiState.value = _uiState.value.copy(
+                        error = "Maximum $MAX_DOCUMENTS documents allowed. You can add ${MAX_DOCUMENTS - currentDocuments.size} more."
+                    )
+                    return@launch
+                }
+
+                // Validate all files are of the same type
+                val invalidFiles = uris.filter { uri ->
+                    when (detectedFileType) {
+                        FileType.PDF -> !FileUtils.isPdfFile(context, uri)
+                        FileType.DOCX -> !FileUtils.isDocxFile(context, uri)
+                    }
+                }
+
+                if (invalidFiles.isNotEmpty()) {
+                    _uiState.value = _uiState.value.copy(
+                        error = "All files must be ${detectedFileType.displayName} files"
+                    )
+                    return@launch
+                }
+
+                // Process each file
+                val newDocuments = mutableListOf<DocumentItem>()
+
+                for (uri in uris) {
+                    if (!FileUtils.isValidFile(context, uri)) {
+                        _uiState.value = _uiState.value.copy(
+                            error = "Invalid file: ${FileUtils.getFileName(context, uri)}"
+                        )
+                        return@launch
+                    }
+
+                    val documentItem = processFile(context, uri, detectedFileType)
+                    if (documentItem != null) {
+                        newDocuments.add(documentItem)
+                    }
+                }
+
+                // Update state with new documents
+                val updatedDocuments = currentDocuments + newDocuments
+                _uiState.value = _uiState.value.copy(
+                    currentFileType = detectedFileType,
+                    documents = updatedDocuments,
+                    canAddMoreFiles = updatedDocuments.size < MAX_DOCUMENTS
+                )
+
+                recalculateTotalPrice()
+
+            } catch (e: Exception) {
+                Log.e("DocumentUploadVM", "Error selecting files", e)
+                _uiState.value = _uiState.value.copy(error = "Error processing files: ${e.message}")
             }
         }
+    }
 
-        when (fileType) {
-            FileType.PDF -> {
-                val pageCount = FileUtils.getPdfPageCount(context, uri)
+    private suspend fun processFile(context: Context, uri: Uri, fileType: FileType): DocumentItem? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val fileName = FileUtils.getFileName(context, uri)
+                val fileSize = FileUtils.getFileSize(context, uri)
+                val documentId = UUID.randomUUID().toString()
 
-                if (pageCount != null && pageCount > 0) {
-                    // Success - use detected page count
-                    _uiState.value = _uiState.value.copy(
-                        selectedFile = uri,
-                        fileName = fileName,
-                        fileSize = fileSize,
-                        fileType = fileType,
-                        pageCount = pageCount,
-                        needsUserPageInput = false,
-                        userInputPageCount = 0,
-                        showPreview = true, // Enable preview for PDF
-                        error = null
-                    )
-                } else {
-                    // Failed - ask user for page count
-                    _uiState.value = _uiState.value.copy(
-                        selectedFile = uri,
-                        fileName = fileName,
-                        fileSize = fileSize,
-                        fileType = fileType,
-                        pageCount = 0,
-                        needsUserPageInput = true,
-                        userInputPageCount = 0,
-                        showPreview = false, // Disable preview if can't read PDF
-                        error = null
-                    )
+                when (fileType) {
+                    FileType.PDF -> {
+                        val pageCount = FileUtils.getPdfPageCount(context, uri)
+                        val previewBitmap = generatePdfPreview(context, uri)
+
+                        DocumentItem(
+                            id = documentId,
+                            uri = uri,
+                            fileName = fileName,
+                            fileSize = fileSize,
+                            fileType = fileType,
+                            pageCount = pageCount ?: 0,
+                            needsUserPageInput = pageCount == null,
+                            userInputPageCount = 0,
+                            printSettings = PrintSettings(),
+                            previewBitmap = previewBitmap
+                        )
+                    }
+
+                    FileType.DOCX -> {
+                        DocumentItem(
+                            id = documentId,
+                            uri = uri,
+                            fileName = fileName,
+                            fileSize = fileSize,
+                            fileType = fileType,
+                            pageCount = 1,
+                            needsUserPageInput = false,
+                            userInputPageCount = 0,
+                            printSettings = PrintSettings(pagesToPrint = PageSelection.ALL)
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("DocumentUploadVM", "Error processing file", e)
+                null
+            }
+        }
+    }
+
+    private fun generatePdfPreview(context: Context, uri: Uri): Bitmap? {
+        return try {
+            context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                PdfRenderer(pfd).use { renderer ->
+                    if (renderer.pageCount > 0) {
+                        renderer.openPage(0).use { page ->
+                            val width = 200
+                            val height = (width * page.height / page.width.toFloat()).toInt()
+                            val bitmap = createBitmap(width, height)
+                            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                            bitmap
+                        }
+                    } else null
                 }
             }
+        } catch (e: Exception) {
+            Log.w("DocumentUploadVM", "Cannot generate PDF preview: ${e.message}")
+            null
+        }
+    }
 
-            FileType.DOCX -> {
-                _uiState.value = _uiState.value.copy(
-                    selectedFile = uri,
-                    fileName = fileName,
-                    fileSize = fileSize,
-                    fileType = fileType,
-                    pageCount = 1, // Default to 1 for DOCX (not used for calculation)
-                    needsUserPageInput = false,
-                    userInputPageCount = 0,
-                    showPreview = false, // No preview for DOCX
-                    printSettings = _uiState.value.printSettings.copy(
-                        pagesToPrint = PageSelection.ALL // Force ALL pages for DOCX
-                    ),
-                    error = null
-                )
-            }
+    fun removeDocument(documentId: String) {
+        val updatedDocuments = _uiState.value.documents.filter { it.id != documentId }
+
+        _uiState.value = _uiState.value.copy(
+            documents = updatedDocuments,
+            currentFileType = if (updatedDocuments.isEmpty()) null else _uiState.value.currentFileType,
+            canAddMoreFiles = updatedDocuments.size < MAX_DOCUMENTS
+        )
+
+        recalculateTotalPrice()
+    }
+
+    fun updateDocumentSettings(documentId: String, settings: PrintSettings) {
+        val updatedDocuments = _uiState.value.documents.map { doc ->
+            if (doc.id == documentId) {
+                doc.copy(printSettings = settings)
+            } else doc
         }
 
-        recalculatePrice()
+        _uiState.value = _uiState.value.copy(documents = updatedDocuments)
+        recalculateDocumentPrice(documentId)
     }
 
+    fun updateDocumentPageCount(documentId: String, pageCount: Int) {
+        val updatedDocuments = _uiState.value.documents.map { doc ->
+            if (doc.id == documentId) {
+                doc.copy(
+                    userInputPageCount = pageCount,
+                    pageCount = pageCount
+                )
+            } else doc
+        }
 
-    fun togglePreview() {
-        _uiState.value = _uiState.value.copy(showPreview = !_uiState.value.showPreview)
+        _uiState.value = _uiState.value.copy(documents = updatedDocuments)
+        recalculateDocumentPrice(documentId)
     }
 
-    fun updatePreviewPage(page: Int) {
-        _uiState.value = _uiState.value.copy(currentPreviewPage = page)
+    fun toggleDocumentExpansion(documentId: String) {
+        val updatedDocuments = _uiState.value.documents.map { doc ->
+            if (doc.id == documentId) {
+                doc.copy(isExpanded = !doc.isExpanded)
+            } else doc
+        }
+
+        _uiState.value = _uiState.value.copy(documents = updatedDocuments)
     }
 
-    // Replace these methods in DocumentUploadViewModel.kt
+    private fun recalculateDocumentPrice(documentId: String) {
+        val updatedDocuments = _uiState.value.documents.map { doc ->
+            if (doc.id == documentId) {
+                val price = printOrderRepository.calculatePrice(
+                    doc.printSettings,
+                    doc.getEffectivePageCount(),
+                    currentShopSettings,
+                    doc.fileType
+                )
+                doc.copy(calculatedPrice = price)
+            } else doc
+        }
 
-    // Replace the submitOrderWithPayment method in DocumentUploadViewModel.kt
+        _uiState.value = _uiState.value.copy(documents = updatedDocuments)
+        recalculateTotalPrice()
+    }
+
+    private fun recalculateTotalPrice() {
+        val totalPrice = _uiState.value.documents.sumOf { doc ->
+            printOrderRepository.calculatePrice(
+                doc.printSettings,
+                doc.getEffectivePageCount(),
+                currentShopSettings,
+                doc.fileType
+            )
+        }
+
+        // Update all document prices
+        val updatedDocuments = _uiState.value.documents.map { doc ->
+            val price = printOrderRepository.calculatePrice(
+                doc.printSettings,
+                doc.getEffectivePageCount(),
+                currentShopSettings,
+                doc.fileType
+            )
+            doc.copy(calculatedPrice = price)
+        }
+
+        _uiState.value = _uiState.value.copy(
+            documents = updatedDocuments,
+            totalCalculatedPrice = totalPrice
+        )
+    }
 
     fun submitOrderWithPayment(onOrderCreated: (String) -> Unit) {
+        submitOrder(withPayment = true, onOrderCreated)
+    }
+
+    fun submitOrderWithoutPayment() {
+        submitOrder(withPayment = false) { }
+    }
+
+// In DocumentUploadViewModel.kt - Replace the submitOrder method
+
+    private fun submitOrder(withPayment: Boolean, onOrderCreated: (String) -> Unit) {
         val currentUser = FirebaseAuth.getInstance().currentUser
         if (currentUser == null) {
             _uiState.value = _uiState.value.copy(error = "Please sign in to continue")
@@ -176,210 +345,107 @@ class DocumentUploadViewModel(
             return
         }
 
-        if (_uiState.value.customerId.isEmpty()) {
-            _uiState.value = _uiState.value.copy(error = "Customer information is required")
+        if (_uiState.value.documents.isEmpty()) {
+            _uiState.value = _uiState.value.copy(error = "Please select at least one document")
             return
         }
 
-        val selectedFile = _uiState.value.selectedFile
-        if (selectedFile == null) {
-            _uiState.value = _uiState.value.copy(error = "Please select a file first")
-            return
+        // Validate all documents have valid page counts
+        val invalidDocuments = _uiState.value.documents.filter { doc ->
+            doc.needsUserPageInput && doc.userInputPageCount <= 0
         }
 
-        // Determine final page count based on file type
-        val finalPageCount = when (_uiState.value.fileType) {
-            FileType.PDF -> {
-                if (_uiState.value.needsUserPageInput) {
-                    if (_uiState.value.userInputPageCount <= 0) {
-                        _uiState.value = _uiState.value.copy(error = "Please enter the number of pages")
-                        return
-                    }
-                    _uiState.value.userInputPageCount
-                } else {
-                    if (_uiState.value.pageCount <= 0) {
-                        _uiState.value = _uiState.value.copy(error = "Invalid page count")
-                        return
-                    }
-                    _uiState.value.pageCount
-                }
-            }
-            FileType.DOCX -> 1 // DOCX files always use 1 for page count
-            null -> {
-                _uiState.value = _uiState.value.copy(error = "File type not determined")
-                return
-            }
+        if (invalidDocuments.isNotEmpty()) {
+            _uiState.value = _uiState.value.copy(
+                error = "Please enter page count for: ${invalidDocuments.joinToString(", ") { it.fileName }}"
+            )
+            return
         }
 
         viewModelScope.launch {
             try {
                 _uiState.value = _uiState.value.copy(isUploading = true, error = null)
 
-                val documentUrl = printOrderRepository.uploadDocument(selectedFile)
+                // Upload all documents
+                val documentUrls = mutableListOf<String>()
+                val documentNames = mutableListOf<String>()
+                val printSettingsArray = mutableListOf<Map<String, Any>>()
+                val individualDocumentsArray = mutableListOf<Map<String, Any>>()
+                val documents = _uiState.value.documents
+
+                for ((index, document) in documents.withIndex()) {
+                    _uiState.value = _uiState.value.copy(
+                        uploadProgress = (index.toFloat() / documents.size)
+                    )
+
+                    val documentUrl = printOrderRepository.uploadDocument(document.uri!!)
+                    documentUrls.add(documentUrl)
+                    documentNames.add(document.fileName)
+
+                    // Convert PrintSettings to Map
+                    val settingsMap = mapOf(
+                        "colorMode" to document.printSettings.colorMode.name,
+                        "pagesToPrint" to document.printSettings.pagesToPrint.name,
+                        "customPages" to document.printSettings.customPages,
+                        "copies" to document.printSettings.copies,
+                        "paperSize" to document.printSettings.paperSize.name,
+                        "orientation" to document.printSettings.orientation.name,
+                        "quality" to document.printSettings.quality.name
+                    )
+                    printSettingsArray.add(settingsMap)
+
+                    // Individual document data
+                    val docData = mapOf(
+                        "fileName" to document.fileName,
+                        "fileSize" to document.fileSize,
+                        "fileType" to document.fileType.extension,
+                        "pageCount" to document.getEffectivePageCount(),
+                        "printSettings" to settingsMap,
+                        "calculatedPrice" to document.calculatedPrice
+                    )
+                    individualDocumentsArray.add(docData)
+                }
+
+                val totalSize = documents.sumOf { it.fileSize }
+                val totalPages = documents.sumOf { it.getEffectivePageCount() }
 
                 val order = PrintOrder(
                     customerId = _uiState.value.customerId,
                     customerPhone = _uiState.value.customerPhone,
-                    documentName = _uiState.value.fileName,
-                    documentUrl = documentUrl,
-                    documentSize = _uiState.value.fileSize,
-                    fileType = _uiState.value.fileType?.extension ?: ".pdf",
-                    pageCount = finalPageCount,
-                    printSettings = _uiState.value.printSettings,
+                    documentName = documentNames, // Array of names
+                    documentUrl = documentUrls, // Array of URLs
+                    documentSize = totalSize,
+                    fileType = _uiState.value.currentFileType?.extension ?: ".pdf",
+                    pageCount = totalPages,
+                    printSettings = printSettingsArray, // Array of settings maps
+                    individualDocuments = individualDocumentsArray, // Array of document maps
+                    documentCount = documents.size, // NEW FIELD
                     hasSettings = true,
                     isPaid = false,
-                    canAutoPrint = _uiState.value.fileType == FileType.PDF // Only PDFs can be auto-printed
+                    canAutoPrint = _uiState.value.currentFileType == FileType.PDF
                 )
 
                 val orderId = printOrderRepository.createOrder(order)
 
                 _uiState.value = _uiState.value.copy(
                     isUploading = false,
-                    orderId = orderId
+                    orderId = orderId,
+                    uploadProgress = 1f
                 )
 
-                onOrderCreated(orderId)
-
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isUploading = false,
-                    error = "Upload failed: ${e.message}"
-                )
-            }
-        }
-    }
-
-    fun submitOrderWithoutPayment() {
-        if (!_uiState.value.isShopOpen) {
-            _uiState.value = _uiState.value.copy(error = "Shop is currently closed")
-            return
-        }
-
-        if (_uiState.value.customerId.isEmpty()) {
-            _uiState.value = _uiState.value.copy(error = "Customer information is required")
-            return
-        }
-
-        val selectedFile = _uiState.value.selectedFile
-        if (selectedFile == null) {
-            _uiState.value = _uiState.value.copy(error = "Please select a file first")
-            return
-        }
-
-        // Determine final page count based on file type
-        val finalPageCount = when (_uiState.value.fileType) {
-            FileType.PDF -> {
-                if (_uiState.value.needsUserPageInput) {
-                    if (_uiState.value.userInputPageCount <= 0) {
-                        _uiState.value = _uiState.value.copy(error = "Please enter the number of pages")
-                        return
-                    }
-                    _uiState.value.userInputPageCount
-                } else {
-                    _uiState.value.pageCount
+                if (withPayment) {
+                    onOrderCreated(orderId)
                 }
-            }
-            FileType.DOCX -> 1
-            null -> 1
-        }
-
-        viewModelScope.launch {
-            try {
-                _uiState.value = _uiState.value.copy(isUploading = true, error = null)
-
-                val documentUrl = printOrderRepository.uploadDocument(selectedFile)
-
-                val order = PrintOrder(
-                    customerId = _uiState.value.customerId,
-                    customerPhone = _uiState.value.customerPhone,
-                    documentName = _uiState.value.fileName,
-                    documentUrl = documentUrl,
-                    documentSize = _uiState.value.fileSize,
-                    fileType = _uiState.value.fileType?.extension ?: ".pdf",
-                    pageCount = finalPageCount,
-                    printSettings = _uiState.value.printSettings,
-                    hasSettings = true,
-                    isPaid = false,
-                    canAutoPrint = _uiState.value.fileType == FileType.PDF
-                )
-
-                val orderId = printOrderRepository.createOrder(order)
-
-                _uiState.value = _uiState.value.copy(
-                    isUploading = false,
-                    orderId = orderId
-                )
 
             } catch (e: Exception) {
+                Log.e("DocumentUploadVM", "Upload failed", e)
                 _uiState.value = _uiState.value.copy(
                     isUploading = false,
-                    error = "Upload failed: ${e.message}"
+                    error = "Upload failed: ${e.message}",
+                    uploadProgress = 0f
                 )
             }
         }
-    }
-
-    fun submitOrderWithoutSettings() {
-        if (!_uiState.value.isShopOpen) {
-            _uiState.value = _uiState.value.copy(error = "Shop is currently closed")
-            return
-        }
-
-        if (_uiState.value.customerId.isEmpty() || _uiState.value.customerPhone.isEmpty()) {
-            _uiState.value = _uiState.value.copy(error = "Customer information is required")
-            return
-        }
-
-        val selectedFile = _uiState.value.selectedFile
-        if (selectedFile == null) {
-            _uiState.value = _uiState.value.copy(error = "Please select a file first")
-            return
-        }
-
-        viewModelScope.launch {
-            try {
-                _uiState.value = _uiState.value.copy(isUploading = true, error = null)
-
-                val documentUrl = printOrderRepository.uploadDocument(selectedFile)
-
-                val order = PrintOrder(
-                    customerId = _uiState.value.customerId,
-                    customerPhone = _uiState.value.customerPhone,
-                    documentName = _uiState.value.fileName,
-                    documentUrl = documentUrl,
-                    documentSize = _uiState.value.fileSize,
-                    pageCount = _uiState.value.pageCount,
-                    hasSettings = false,
-                    isPaid = false,
-                    canAutoPrint = false
-                )
-
-                val orderId = printOrderRepository.createOrder(order)
-
-                _uiState.value = _uiState.value.copy(
-                    isUploading = false,
-                    orderId = orderId
-                )
-
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isUploading = false,
-                    error = "Upload failed: ${e.message}"
-                )
-            }
-        }
-    }
-
-    fun clearError() {
-        _uiState.value = _uiState.value.copy(error = null)
-    }
-
-    fun resetUpload() {
-        _uiState.value = DocumentUploadUiState().copy(
-            isShopOpen = _uiState.value.isShopOpen,
-            customerId = _uiState.value.customerId,
-            customerPhone = _uiState.value.customerPhone
-        )
     }
 
     fun clearState() {
@@ -390,7 +456,9 @@ class DocumentUploadViewModel(
         )
     }
 
-    private var currentShopSettings: ShopSettings = ShopSettings()
+    fun clearError() {
+        _uiState.value = _uiState.value.copy(error = null)
+    }
 
     private fun observeShopStatus() {
         viewModelScope.launch {
@@ -399,42 +467,13 @@ class DocumentUploadViewModel(
                     currentShopSettings = settings
                     _uiState.value = _uiState.value.copy(isShopOpen = settings.shopOpen)
 
-                    if (_uiState.value.selectedFile != null) {
-                        recalculatePrice()
+                    if (_uiState.value.documents.isNotEmpty()) {
+                        recalculateTotalPrice()
                     }
                 }
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
         }
-    }
-
-    private fun recalculatePrice() {
-        viewModelScope.launch {
-            try {
-                val price = printOrderRepository.calculatePrice(
-                    _uiState.value.printSettings,
-                    _uiState.value.pageCount,
-                    currentShopSettings,
-                    _uiState.value.fileType
-                )
-                _uiState.value = _uiState.value.copy(calculatedPrice = price)
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(error = "Price calculation failed: ${e.message}")
-            }
-        }
-    }
-
-    fun updatePrintSettings(settings: PrintSettings) {
-        _uiState.value = _uiState.value.copy(printSettings = settings)
-        recalculatePrice()
-    }
-
-    fun updateUserPageCount(pageCount: Int) {
-        _uiState.value = _uiState.value.copy(
-            userInputPageCount = pageCount,
-            pageCount = pageCount // Update the actual page count used for calculations
-        )
-        recalculatePrice()
     }
 }
