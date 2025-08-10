@@ -9,7 +9,6 @@ import androidx.core.graphics.createBitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
-import com.google.gson.Gson
 import com.humblecoders.stationary.data.model.DocumentItem
 import com.humblecoders.stationary.data.model.FileType
 import com.humblecoders.stationary.data.model.PageSelection
@@ -50,7 +49,6 @@ class DocumentUploadViewModel(
     val uiState: StateFlow<DocumentUploadUiState> = _uiState.asStateFlow()
 
     private var currentShopSettings: ShopSettings = ShopSettings()
-    private val gson = Gson()
 
     companion object {
         private const val MAX_DOCUMENTS = 10 // Maximum documents per upload
@@ -367,7 +365,7 @@ class DocumentUploadViewModel(
         // Validate page ranges for PDF documents
         val pageValidationErrors = mutableListOf<String>()
         _uiState.value.documents.forEach { document ->
-            if (document.fileType == com.humblecoders.stationary.data.model.FileType.PDF) {
+            if (document.fileType == FileType.PDF) {
                 val maxPages = document.getEffectivePageCount()
 
                 // Validate B&W pages
@@ -389,8 +387,8 @@ class DocumentUploadViewModel(
                     document.printSettings.customColorPages.isNotEmpty()) {
                     val overlapError = checkPageOverlapForDocument(
                         document.printSettings.customBWPages,
-                        document.printSettings.customColorPages,
-                        maxPages
+                        document.printSettings.customColorPages
+
                     )
                     if (overlapError != null) {
                         pageValidationErrors.add("${document.fileName}: $overlapError")
@@ -468,7 +466,7 @@ class DocumentUploadViewModel(
                     documentCount = documents.size, // Document count
                     hasSettings = true,
                     isPaid = false,
-                    canAutoPrint = _uiState.value.currentFileType == com.humblecoders.stationary.data.model.FileType.PDF
+                    canAutoPrint = _uiState.value.currentFileType == FileType.PDF
                 )
 
                 val orderId = printOrderRepository.createOrder(order)
@@ -502,9 +500,6 @@ class DocumentUploadViewModel(
         )
     }
 
-    fun clearError() {
-        _uiState.value = _uiState.value.copy(error = null)
-    }
 
     private fun observeShopStatus() {
         viewModelScope.launch {
@@ -550,7 +545,7 @@ private fun isValidPageRangeForDocument(pageRange: String, maxPages: Int): Boole
     }
 }
 
-private fun checkPageOverlapForDocument(bwPages: String, colorPages: String, maxPages: Int): String? {
+private fun checkPageOverlapForDocument(bwPages: String, colorPages: String): String? {
     if (bwPages.isEmpty() || colorPages.isEmpty()) return null
 
     try {

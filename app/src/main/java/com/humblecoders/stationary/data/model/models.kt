@@ -1,11 +1,8 @@
-// Updated models.kt - Add support for multiple documents
-
 package com.humblecoders.stationary.data.model
 
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.PropertyName
 
-// New data class for individual documents
 data class DocumentItem(
     val id: String = "",
     val uri: android.net.Uri? = null,
@@ -30,8 +27,6 @@ data class DocumentItem(
         }
     }
 }
-
-// In models.kt - Replace the PrintOrder data class with these changes
 
 data class PrintOrder(
     val orderId: String = "",
@@ -70,11 +65,6 @@ data class PrintOrder(
 ) {
     @PropertyName("isPaid")
     fun getIsPaid(): Boolean = isPaid
-
-    @PropertyName("isPaid")
-    fun setIsPaid(value: Boolean) {
-        // This is handled by the copy constructor
-    }
 }
 
 // Rest of the existing models remain the same...
@@ -131,19 +121,6 @@ data class PrintSettings(
         }
     }
 
-    // Helper function to get all pages being printed
-    fun getAllPrintedPages(totalPages: Int): List<Int> {
-        val bwPages = getEffectiveBWPages(totalPages)
-        val colorPages = getEffectiveColorPages(totalPages)
-        return (bwPages + colorPages).distinct().sorted()
-    }
-
-    // Helper function to check if using mixed color mode
-    fun isMixedColorMode(totalPages: Int): Boolean {
-        val bwPages = getEffectiveBWPages(totalPages)
-        val colorPages = getEffectiveColorPages(totalPages)
-        return bwPages.isNotEmpty() && colorPages.isNotEmpty()
-    }
 
     private fun parsePageRange(pageRange: String, totalPages: Int): List<Int> {
         if (pageRange.isEmpty()) return emptyList()

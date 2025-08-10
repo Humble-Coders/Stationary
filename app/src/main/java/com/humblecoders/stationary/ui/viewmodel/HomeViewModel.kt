@@ -142,9 +142,7 @@ class HomeViewModel(
         observeUserOrders()
     }
 
-    fun clearError() {
-        _uiState.value = _uiState.value.copy(error = null)
-    }
+
 
     fun getPaymentStatusDisplay(order: PrintOrder): String {
         return when (order.paymentStatus.toString()) {

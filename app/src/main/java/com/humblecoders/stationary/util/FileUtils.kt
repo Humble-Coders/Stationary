@@ -44,15 +44,6 @@ object FileUtils {
                 fileSize < 50 * 1024 * 1024 // 50MB limit
     }
 
-    fun isValidPdfFile(context: Context, uri: Uri): Boolean {
-        val fileName = getFileName(context, uri)
-        val fileSize = getFileSize(context, uri)
-
-        return fileName.endsWith(".pdf", ignoreCase = true) &&
-                fileSize > 0 &&
-                fileSize < 50 * 1024 * 1024 // 50MB limit
-    }
-
     fun isDocxFile(context: Context, uri: Uri): Boolean {
         val fileName = getFileName(context, uri)
         return fileName.endsWith(".docx", ignoreCase = true)

@@ -22,8 +22,7 @@ import com.humblecoders.stationary.ui.viewmodel.auth.ProfileViewModel
 fun ProfileScreen(
     viewModel: ProfileViewModel,
     navController: NavController,
-    onSignOut: () -> Unit,
-    onAccountDeleted: () -> Unit
+    onSignOut: () -> Unit
 ) {
     val profileState by viewModel.profileState.collectAsState()
     val isSigningOut by viewModel.isSigningOut.collectAsState()

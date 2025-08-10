@@ -20,13 +20,4 @@ class ShopSettingsRepository(firestore : FirebaseFirestore) {
     fun observeShopStatus(): Flow<Boolean> {
         return observeShopSettings().map { it.shopOpen }
     }
-
-    suspend fun getShopSettings(): ShopSettings {
-        return try {
-            val snapshot = settingsDoc.get().await()
-            snapshot.toObject(ShopSettings::class.java) ?: ShopSettings()
-        } catch (e: Exception) {
-            ShopSettings()
-        }
-    }
 }

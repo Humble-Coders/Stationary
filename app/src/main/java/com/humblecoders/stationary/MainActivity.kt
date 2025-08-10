@@ -44,11 +44,9 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
     private lateinit var loginViewModel: LoginViewModel
     private lateinit var registerViewModel: RegisterViewModel
     private lateinit var profileViewModel: ProfileViewModel
-    private lateinit var mainViewModel: MainViewModel
     private lateinit var homeViewModel: HomeViewModel
     private lateinit var documentUploadViewModel: DocumentUploadViewModel
     private lateinit var paymentViewModel: PaymentViewModel
-    private lateinit var customerInfoViewModel: CustomerInfoViewModel
 
     private lateinit var googleSignInLauncher: ActivityResultLauncher<Intent>
 
@@ -128,7 +126,6 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
         loginViewModel = LoginViewModel(authRepository)
         registerViewModel = RegisterViewModel(authRepository)
         profileViewModel = ProfileViewModel(profileRepository, authRepository)
-        mainViewModel = MainViewModel(shopSettingsRepository)
         homeViewModel = HomeViewModel(printOrderRepository, shopSettingsRepository)
         documentUploadViewModel = DocumentUploadViewModel(printOrderRepository, shopSettingsRepository)
         paymentViewModel = PaymentViewModel(printOrderRepository, razorpayService)
@@ -145,7 +142,6 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
 
         PrintShopNavigation(
             navController = navController,
-            mainViewModel = mainViewModel,
             homeViewModel = homeViewModel,
             documentUploadViewModel = documentUploadViewModel,
             paymentViewModel = paymentViewModel,

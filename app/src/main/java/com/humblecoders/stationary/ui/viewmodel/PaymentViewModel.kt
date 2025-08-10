@@ -5,7 +5,6 @@ package com.humblecoders.stationary.ui.viewmodel
 import android.app.Activity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.humblecoders.stationary.data.model.PaymentResult
 import com.humblecoders.stationary.data.model.PaymentTransactionData
 import com.humblecoders.stationary.data.repository.PrintOrderRepository
 import com.humblecoders.stationary.data.service.RazorpayService
@@ -41,9 +40,6 @@ class PaymentViewModel(
         _uiState.value = PaymentUiState()
         _currentPaymentInfo.value = null
         currentPaymentAmount = 0.0
-    }
-    fun resetPayment() {
-        _uiState.value = PaymentUiState()
     }
 
 
@@ -127,7 +123,6 @@ class PaymentViewModel(
                     isSuccess = true
                 )
 
-                // Clear state after short delay to show success message
                 kotlinx.coroutines.delay(1500)
                 clearState()
 

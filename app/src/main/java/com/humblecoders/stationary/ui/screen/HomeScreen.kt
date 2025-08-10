@@ -38,20 +38,17 @@ import com.humblecoders.stationary.data.model.PrintOrder
 import com.humblecoders.stationary.ui.component.OrderCard
 import com.humblecoders.stationary.ui.component.ShopClosedCard
 import com.humblecoders.stationary.ui.viewmodel.HomeViewModel
-import com.humblecoders.stationary.ui.viewmodel.MainViewModel
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class)
 @Composable
 fun HomeScreen(
-    mainViewModel: MainViewModel,
     homeViewModel: HomeViewModel,
     onNavigateToUpload: () -> Unit,
     onNavigateToOrderHistory : () -> Unit,
     onNavigateToProfile: () -> Unit
 
 ) {
-    val mainUiState by mainViewModel.uiState.collectAsState()
     val homeUiState by homeViewModel.uiState.collectAsState()
     val coroutineScope = rememberCoroutineScope()
 

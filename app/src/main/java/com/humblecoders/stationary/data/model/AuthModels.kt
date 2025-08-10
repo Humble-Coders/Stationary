@@ -1,6 +1,5 @@
 package com.humblecoders.stationary.data.model
 
-import com.google.firebase.Timestamp
 
 data class UserProfile(
     val id: String = "",

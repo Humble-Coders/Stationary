@@ -19,7 +19,6 @@ class LoginViewModel(private val repository: FirebaseAuthRepository) : ViewModel
     val loginState: StateFlow<LoginState> = _loginState.asStateFlow()
 
     private val _userProfile = MutableStateFlow<Map<String, Any>?>(null)
-    val userProfile: StateFlow<Map<String, Any>?> = _userProfile.asStateFlow()
 
     fun handleGoogleSignInResult(data: Intent?) {
         viewModelScope.launch {

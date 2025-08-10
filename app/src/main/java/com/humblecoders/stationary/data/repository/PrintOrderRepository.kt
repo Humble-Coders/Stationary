@@ -24,7 +24,6 @@ class PrintOrderRepository(firestore: FirebaseFirestore, storage: FirebaseStorag
 
     private val ordersCollection = firestore.collection("print_orders")
     private val storageRef = storage.reference.child("documents")
-    private val gson = Gson()
 
     suspend fun uploadDocument(uri: Uri): String {
         val timestamp = System.currentTimeMillis()
@@ -34,16 +33,6 @@ class PrintOrderRepository(firestore: FirebaseFirestore, storage: FirebaseStorag
 
         val uploadTask = documentRef.putFile(uri).await()
         return uploadTask.storage.downloadUrl.await().toString()
-    }
-
-    // Updated method to handle multiple documents
-    suspend fun uploadMultipleDocuments(uris: List<Uri>): List<String> {
-        val urls = mutableListOf<String>()
-        for (uri in uris) {
-            val url = uploadDocument(uri)
-            urls.add(url)
-        }
-        return urls
     }
 
     private fun PrintOrder.toFirestoreMap(): Map<String, Any?> {
@@ -117,79 +106,6 @@ class PrintOrderRepository(firestore: FirebaseFirestore, storage: FirebaseStorag
             }
     }
 
-    fun calculateTotalPrice(individualDocuments: List<Map<String, Any>>, shopSettings: ShopSettings): Double {
-        return individualDocuments.sumOf { docMap ->
-            val printSettingsMap = docMap["printSettings"] as? Map<String, Any>
-            val printSettings = printSettingsMap?.let { parseMapToPrintSettings(it) } ?: PrintSettings()
-            val pageCount = (docMap["pageCount"] as? Number)?.toInt() ?: 1
-            val fileTypeStr = (docMap["fileType"] as? String) ?: ".pdf"
-            val fileType = if (fileTypeStr == ".docx") FileType.DOCX else FileType.PDF
-
-            calculatePrice(printSettings, pageCount, shopSettings, fileType)
-        }
-    }
-
-    private fun parseMapToPrintSettings(map: Map<String, Any>): PrintSettings {
-        return try {
-            PrintSettings(
-                colorMode = parseColorMode(map["colorMode"] as? String),
-                pagesToPrint = parsePageSelection(map["pagesToPrint"] as? String),
-                customPages = map["customPages"] as? String ?: "",
-                customBWPages = map["customBWPages"] as? String ?: "", // NEW
-                customColorPages = map["customColorPages"] as? String ?: "", // NEW
-                copies = (map["copies"] as? Number)?.toInt() ?: 1,
-                paperSize = parsePaperSize(map["paperSize"] as? String),
-                orientation = parseOrientation(map["orientation"] as? String),
-                quality = parseQuality(map["quality"] as? String)
-            )
-        } catch (e: Exception) {
-            PrintSettings()
-        }
-    }
-
-    private fun parseColorMode(value: String?): ColorMode {
-        return when (value) {
-            "COLOR" -> ColorMode.COLOR
-            "BW" -> ColorMode.BW
-            else -> ColorMode.BW
-        }
-    }
-
-    private fun parsePageSelection(value: String?): PageSelection {
-        return when (value) {
-            "ALL" -> PageSelection.ALL
-            "CUSTOM" -> PageSelection.CUSTOM
-            else -> PageSelection.ALL
-        }
-    }
-
-    private fun parsePaperSize(value: String?): com.humblecoders.stationary.data.model.PaperSize {
-        return when (value) {
-            "A4" -> com.humblecoders.stationary.data.model.PaperSize.A4
-            "A3" -> com.humblecoders.stationary.data.model.PaperSize.A3
-            "LETTER" -> com.humblecoders.stationary.data.model.PaperSize.LETTER
-            else -> com.humblecoders.stationary.data.model.PaperSize.A4
-        }
-    }
-
-    private fun parseOrientation(value: String?): com.humblecoders.stationary.data.model.Orientation {
-        return when (value) {
-            "PORTRAIT" -> com.humblecoders.stationary.data.model.Orientation.PORTRAIT
-            "LANDSCAPE" -> com.humblecoders.stationary.data.model.Orientation.LANDSCAPE
-            else -> com.humblecoders.stationary.data.model.Orientation.PORTRAIT
-        }
-    }
-
-    private fun parseQuality(value: String?): com.humblecoders.stationary.data.model.Quality {
-        return when (value) {
-            "DRAFT" -> com.humblecoders.stationary.data.model.Quality.DRAFT
-            "NORMAL" -> com.humblecoders.stationary.data.model.Quality.NORMAL
-            "HIGH" -> com.humblecoders.stationary.data.model.Quality.HIGH
-            else -> com.humblecoders.stationary.data.model.Quality.NORMAL
-        }
-    }
-
-    // In PrintOrderRepository.kt - Replace the calculatePrice method
 
     fun calculatePrice(settings: PrintSettings, pageCount: Int, shopSettings: ShopSettings, fileType: FileType? = null): Double {
         return when (fileType) {
@@ -217,49 +133,4 @@ class PrintOrderRepository(firestore: FirebaseFirestore, storage: FirebaseStorag
         return (bwCost + colorCost) * settings.copies
     }
 
-    // Update the calculateActualPagesToPrint method (keep for backward compatibility)
-    private fun calculateActualPagesToPrint(settings: PrintSettings, totalPages: Int): Int {
-        // For backward compatibility with old orders
-        return when (settings.pagesToPrint) {
-            PageSelection.ALL -> totalPages
-            PageSelection.CUSTOM -> {
-                if (settings.customPages.isEmpty()) {
-                    totalPages
-                } else {
-                    parsePageRange(settings.customPages, totalPages)
-                }
-            }
-        }
-    }
-
-    // Add this helper method for backward compatibility
-    private fun parsePageRange(pageRange: String, totalPages: Int): Int {
-        try {
-            val pages = mutableSetOf<Int>()
-            val parts = pageRange.split(",")
-
-            for (part in parts) {
-                val trimmed = part.trim()
-                if (trimmed.contains("-")) {
-                    val range = trimmed.split("-")
-                    if (range.size == 2) {
-                        val start = range[0].trim().toInt().coerceIn(1, totalPages)
-                        val end = range[1].trim().toInt().coerceIn(1, totalPages)
-                        for (i in start..end) {
-                            pages.add(i)
-                        }
-                    }
-                } else {
-                    val page = trimmed.toInt()
-                    if (page in 1..totalPages) {
-                        pages.add(page)
-                    }
-                }
-            }
-
-            return pages.size.coerceAtLeast(1)
-        } catch (e: Exception) {
-            return totalPages
-        }
-    }
 }

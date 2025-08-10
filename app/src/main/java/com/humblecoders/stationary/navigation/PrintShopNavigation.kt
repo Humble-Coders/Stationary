@@ -6,7 +6,6 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -19,7 +18,6 @@ import com.humblecoders.stationary.ui.viewmodel.*
 import com.humblecoders.stationary.ui.viewmodel.auth.LoginViewModel
 import com.humblecoders.stationary.ui.viewmodel.auth.RegisterViewModel
 import com.humblecoders.stationary.ui.viewmodel.auth.ProfileViewModel
-import kotlinx.coroutines.launch
 
 sealed class Screen(val route: String) {
     object Login : Screen("login")
@@ -35,7 +33,6 @@ sealed class Screen(val route: String) {
 @Composable
 fun PrintShopNavigation(
     navController: NavHostController,
-    mainViewModel: MainViewModel,
     homeViewModel: HomeViewModel,
     documentUploadViewModel: DocumentUploadViewModel,
     paymentViewModel: PaymentViewModel,
@@ -82,11 +79,6 @@ fun PrintShopNavigation(
                     navController.navigate(Screen.Login.route) {
                         popUpTo(0) { inclusive = true }
                     }
-                },
-                onAccountDeleted = {
-                    navController.navigate(Screen.Login.route) {
-                        popUpTo(0) { inclusive = true }
-                    }
                 }
             )
         }
@@ -105,7 +97,6 @@ fun PrintShopNavigation(
             }
 
             HomeScreen(
-                mainViewModel = mainViewModel,
                 homeViewModel = homeViewModel,
                 onNavigateToUpload = {
                     navController.navigate(Screen.DocumentUpload.route)
