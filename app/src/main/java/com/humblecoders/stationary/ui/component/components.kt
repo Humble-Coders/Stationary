@@ -1,5 +1,6 @@
 package com.humblecoders.stationary.ui.component
 
+import android.util.Log
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -439,26 +440,46 @@ private fun getFileTypeFromExtension(extension: String): String {
     }
 }
 
+// In components.kt - Update the getPrintSettingsDisplaySafe function
+
 private fun getPrintSettingsDisplay(order: PrintOrder): String {
-    return when {
-        order.printSettings.isNotEmpty() -> {
-            if (order.printSettings.size == 1) {
-                // Single document settings
-                val settings = order.printSettings.first()
-                val colorMode = settings["colorMode"] as? String ?: "BW"
-                val copies = (settings["copies"] as? Number)?.toInt() ?: 1
-                val colorModeDisplay = if (colorMode == "COLOR") "Color" else "Black & White"
-                "$colorModeDisplay • $copies ${if (copies > 1) "copies" else "copy"}"
-            } else {
-                // Multiple documents with individual settings
-                "Individual settings (${order.printSettings.size} documents)"
+    return try {
+        when {
+            order.printSettings.isNotEmpty() -> {
+                if (order.printSettings.size == 1) {
+                    val settings = order.printSettings.first()
+                    val customBWPages = settings["customBWPages"] as? String ?: ""
+                    val customColorPages = settings["customColorPages"] as? String ?: ""
+                    val copies = (settings["copies"] as? Number)?.toInt() ?: 1
+
+                    when {
+                        customBWPages.isNotEmpty() && customColorPages.isNotEmpty() -> {
+                            "Mixed (B&W: $customBWPages, Color: $customColorPages) • $copies ${if (copies > 1) "copies" else "copy"}"
+                        }
+                        customBWPages.isNotEmpty() -> {
+                            "B&W pages: $customBWPages • $copies ${if (copies > 1) "copies" else "copy"}"
+                        }
+                        customColorPages.isNotEmpty() -> {
+                            "Color pages: $customColorPages • $copies ${if (copies > 1) "copies" else "copy"}"
+                        }
+                        else -> {
+                            // Fallback to traditional color mode display
+                            val colorMode = settings["colorMode"] as? String ?: "BW"
+                            val colorModeDisplay = if (colorMode == "COLOR") "Color" else "Black & White"
+                            "$colorModeDisplay • $copies ${if (copies > 1) "copies" else "copy"}"
+                        }
+                    }
+                } else {
+                    "Individual settings (${order.printSettings.size} docs)"
+                }
             }
+            order.individualDocuments.isNotEmpty() -> {
+                "Individual settings"
+            }
+            else -> "Not configured"
         }
-        order.individualDocuments.isNotEmpty() -> {
-            "Individual settings"
-        }
-        else -> {
-            "Not configured"
-        }
+    } catch (e: Exception) {
+        Log.w("OrderCard", "Error parsing print settings: ${e.message}")
+        "Settings configured"
     }
 }

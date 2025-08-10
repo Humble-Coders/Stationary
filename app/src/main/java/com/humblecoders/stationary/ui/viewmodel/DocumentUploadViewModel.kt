@@ -333,6 +333,8 @@ class DocumentUploadViewModel(
 
 // In DocumentUploadViewModel.kt - Replace the submitOrder method
 
+    // In DocumentUploadViewModel.kt - Replace the submitOrder method completely
+
     private fun submitOrder(withPayment: Boolean, onOrderCreated: (String) -> Unit) {
         val currentUser = FirebaseAuth.getInstance().currentUser
         if (currentUser == null) {
@@ -362,6 +364,48 @@ class DocumentUploadViewModel(
             return
         }
 
+        // Validate page ranges for PDF documents
+        val pageValidationErrors = mutableListOf<String>()
+        _uiState.value.documents.forEach { document ->
+            if (document.fileType == com.humblecoders.stationary.data.model.FileType.PDF) {
+                val maxPages = document.getEffectivePageCount()
+
+                // Validate B&W pages
+                if (document.printSettings.customBWPages.isNotEmpty()) {
+                    if (!isValidPageRangeForDocument(document.printSettings.customBWPages, maxPages)) {
+                        pageValidationErrors.add("${document.fileName}: Invalid B&W page range (max: $maxPages)")
+                    }
+                }
+
+                // Validate Color pages
+                if (document.printSettings.customColorPages.isNotEmpty()) {
+                    if (!isValidPageRangeForDocument(document.printSettings.customColorPages, maxPages)) {
+                        pageValidationErrors.add("${document.fileName}: Invalid Color page range (max: $maxPages)")
+                    }
+                }
+
+                // Check for overlap
+                if (document.printSettings.customBWPages.isNotEmpty() &&
+                    document.printSettings.customColorPages.isNotEmpty()) {
+                    val overlapError = checkPageOverlapForDocument(
+                        document.printSettings.customBWPages,
+                        document.printSettings.customColorPages,
+                        maxPages
+                    )
+                    if (overlapError != null) {
+                        pageValidationErrors.add("${document.fileName}: $overlapError")
+                    }
+                }
+            }
+        }
+
+        if (pageValidationErrors.isNotEmpty()) {
+            _uiState.value = _uiState.value.copy(
+                error = "Page validation errors:\n${pageValidationErrors.joinToString("\n")}"
+            )
+            return
+        }
+
         viewModelScope.launch {
             try {
                 _uiState.value = _uiState.value.copy(isUploading = true, error = null)
@@ -387,6 +431,8 @@ class DocumentUploadViewModel(
                         "colorMode" to document.printSettings.colorMode.name,
                         "pagesToPrint" to document.printSettings.pagesToPrint.name,
                         "customPages" to document.printSettings.customPages,
+                        "customBWPages" to document.printSettings.customBWPages,
+                        "customColorPages" to document.printSettings.customColorPages,
                         "copies" to document.printSettings.copies,
                         "paperSize" to document.printSettings.paperSize.name,
                         "orientation" to document.printSettings.orientation.name,
@@ -419,10 +465,10 @@ class DocumentUploadViewModel(
                     pageCount = totalPages,
                     printSettings = printSettingsArray, // Array of settings maps
                     individualDocuments = individualDocumentsArray, // Array of document maps
-                    documentCount = documents.size, // NEW FIELD
+                    documentCount = documents.size, // Document count
                     hasSettings = true,
                     isPaid = false,
-                    canAutoPrint = _uiState.value.currentFileType == FileType.PDF
+                    canAutoPrint = _uiState.value.currentFileType == com.humblecoders.stationary.data.model.FileType.PDF
                 )
 
                 val orderId = printOrderRepository.createOrder(order)
@@ -476,4 +522,72 @@ class DocumentUploadViewModel(
             }
         }
     }
+}
+
+// In DocumentUploadViewModel.kt - Add these helper functions at the end of the class
+
+private fun isValidPageRangeForDocument(pageRange: String, maxPages: Int): Boolean {
+    if (pageRange.isEmpty()) return true
+
+    try {
+        val parts = pageRange.split(",")
+        for (part in parts) {
+            val trimmed = part.trim()
+            if (trimmed.contains("-")) {
+                val range = trimmed.split("-")
+                if (range.size != 2) return false
+                val start = range[0].trim().toInt()
+                val end = range[1].trim().toInt()
+                if (start <= 0 || end <= 0 || start > end || start > maxPages || end > maxPages) return false
+            } else {
+                val page = trimmed.toInt()
+                if (page <= 0 || page > maxPages) return false
+            }
+        }
+        return true
+    } catch (e: Exception) {
+        return false
+    }
+}
+
+private fun checkPageOverlapForDocument(bwPages: String, colorPages: String, maxPages: Int): String? {
+    if (bwPages.isEmpty() || colorPages.isEmpty()) return null
+
+    try {
+        val bwPagesList = parsePageRangeToListForDocument(bwPages)
+        val colorPagesList = parsePageRangeToListForDocument(colorPages)
+
+        val overlapping = bwPagesList.intersect(colorPagesList.toSet())
+
+        return if (overlapping.isNotEmpty()) {
+            "Pages ${overlapping.sorted().joinToString(", ")} specified in both B&W and Color"
+        } else null
+    } catch (e: Exception) {
+        return "Invalid page format"
+    }
+}
+
+private fun parsePageRangeToListForDocument(pageRange: String): List<Int> {
+    if (pageRange.isEmpty()) return emptyList()
+
+    val pages = mutableSetOf<Int>()
+    val parts = pageRange.split(",")
+
+    for (part in parts) {
+        val trimmed = part.trim()
+        if (trimmed.contains("-")) {
+            val range = trimmed.split("-")
+            if (range.size == 2) {
+                val start = range[0].trim().toInt()
+                val end = range[1].trim().toInt()
+                for (i in start..end) {
+                    pages.add(i)
+                }
+            }
+        } else {
+            pages.add(trimmed.toInt())
+        }
+    }
+
+    return pages.toList()
 }

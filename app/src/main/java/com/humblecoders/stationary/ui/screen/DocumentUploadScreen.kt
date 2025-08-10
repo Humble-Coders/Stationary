@@ -454,6 +454,37 @@ private fun DocumentCard(
     onUpdateSettings: (PrintSettings) -> Unit,
     onUpdatePageCount: (Int) -> Unit
 ) {
+    val pageOverlapError = if (document.fileType == FileType.PDF) {
+        checkPageOverlap(document.printSettings.customBWPages, document.printSettings.customColorPages, document.getEffectivePageCount())
+    } else null
+
+    pageOverlapError?.let { error ->
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp)
+        ) {
+            Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.Info,
+                    contentDescription = "Error",
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = error,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    fontSize = 12.sp
+                )
+            }
+        }
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
@@ -576,6 +607,7 @@ private fun DocumentCard(
                     PrintSettingsPanel(
                         settings = document.printSettings,
                         fileType = document.fileType,
+                        document= document,
                         onSettingsChange = onUpdateSettings
                     )
                 }
@@ -584,37 +616,32 @@ private fun DocumentCard(
     }
 }
 
+// In DocumentUploadScreen.kt - Replace the PrintSettingsPanel composable
+
 @Composable
 private fun PrintSettingsPanel(
     settings: PrintSettings,
     fileType: FileType,
+    document: DocumentItem,
     onSettingsChange: (PrintSettings) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        // Color Mode
-        Text(
-            text = "Color Mode",
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            ColorMode.entries.forEach { mode ->
-                FilterChip(
-                    selected = settings.colorMode == mode,
-                    onClick = {
-                        onSettingsChange(settings.copy(colorMode = mode))
-                    },
-                    label = {
-                        Text("${mode.displayName} (₹${if (mode == ColorMode.COLOR) "5" else "2"}/page)")
-                    }
-                )
-            }
+
+        // For PDF files, show new mixed color mode interface
+        if (fileType == FileType.PDF) {
+            PdfColorModeSection(
+                settings = settings,
+                maxPages = document.getEffectivePageCount(), // Pass max pages
+                onSettingsChange = onSettingsChange
+            )
+        } else {
+            // For DOCX files, show traditional color mode selection
+            TraditionalColorModeSection(
+                settings = settings,
+                onSettingsChange = onSettingsChange
+            )
         }
 
-        // Orientation
         Text(
             text = "Orientation",
             fontSize = 14.sp,
@@ -634,42 +661,6 @@ private fun PrintSettingsPanel(
                 )
             }
         }
-
-        // Pages to Print (PDF only)
-        if (fileType == FileType.PDF) {
-            Text(
-                text = "Pages to Print",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                PageSelection.entries.forEach { selection ->
-                    FilterChip(
-                        selected = settings.pagesToPrint == selection,
-                        onClick = {
-                            onSettingsChange(settings.copy(pagesToPrint = selection))
-                        },
-                        label = { Text(selection.displayName) }
-                    )
-                }
-            }
-
-            AnimatedVisibility(visible = settings.pagesToPrint == PageSelection.CUSTOM) {
-                OutlinedTextField(
-                    value = settings.customPages,
-                    onValueChange = {
-                        onSettingsChange(settings.copy(customPages = it))
-                    },
-                    label = { Text("Custom Pages") },
-                    placeholder = { Text("e.g., 1-3,5,7-10") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        }
-
         // Copies
         Text(
             text = "Copies",
@@ -715,6 +706,277 @@ private fun PrintSettingsPanel(
             )
         }
     }
+
+}
+
+
+// In DocumentUploadScreen.kt - Update the PdfColorModeSection with validation
+
+@Composable
+private fun PdfColorModeSection(
+    settings: PrintSettings,
+    maxPages: Int, // Add maxPages parameter
+    onSettingsChange: (PrintSettings) -> Unit
+) {
+    // Validation states
+    val bwValidationError = validatePageRange(settings.customBWPages, maxPages)
+    val colorValidationError = validatePageRange(settings.customColorPages, maxPages)
+    val overlapError = checkPageOverlap(settings.customBWPages, settings.customColorPages, maxPages)
+
+    Column {
+        Text(
+            text = "Print Mode",
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+
+        // Show total pages info
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            ),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Info,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Document has $maxPages ${if (maxPages == 1) "page" else "pages"} • Format: 1-3,5,7-10",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Black & White Section
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = if (settings.customBWPages.isNotEmpty() || settings.colorMode == ColorMode.BW)
+                    MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
+            )
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Black & White (₹2/page)",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = if (settings.customBWPages.isNotEmpty()) {
+                                "Pages: ${settings.customBWPages}"
+                            } else if (settings.colorMode == ColorMode.BW) {
+                                "All pages"
+                            } else {
+                                "No pages selected"
+                            },
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Custom pages input field with validation
+                OutlinedTextField(
+                    value = settings.customBWPages,
+                    onValueChange = { value ->
+                        onSettingsChange(settings.copy(
+                            customBWPages = value,
+                            colorMode = if (value.isNotEmpty()) ColorMode.BW else settings.colorMode
+                        ))
+                    },
+                    label = { Text("Custom pages") },
+                    placeholder = { Text("e.g., 1-3,5,7-${maxPages}") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    isError = bwValidationError != null,
+                    supportingText = {
+                        Text(
+                            text = bwValidationError ?: "Tap to edit • Leave empty for all pages in B&W mode",
+                            fontSize = 11.sp,
+                            color = if (bwValidationError != null)
+                                MaterialTheme.colorScheme.error
+                            else
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Color Section
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = if (settings.customColorPages.isNotEmpty() || settings.colorMode == ColorMode.COLOR)
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surface
+            )
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Color (₹5/page)",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = if (settings.customColorPages.isNotEmpty()) {
+                                "Pages: ${settings.customColorPages}"
+                            } else if (settings.colorMode == ColorMode.COLOR) {
+                                "All pages"
+                            } else {
+                                "No pages selected"
+                            },
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Custom pages input field with validation
+                OutlinedTextField(
+                    value = settings.customColorPages,
+                    onValueChange = { value ->
+                        onSettingsChange(settings.copy(
+                            customColorPages = value,
+                            colorMode = if (value.isNotEmpty()) ColorMode.COLOR else settings.colorMode
+                        ))
+                    },
+                    label = { Text("Custom pages") },
+                    placeholder = { Text("e.g., 1-3,5,7-${maxPages}") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    isError = colorValidationError != null,
+                    supportingText = {
+                        Text(
+                            text = colorValidationError ?: "Tap to edit • Leave empty for all pages in color mode",
+                            fontSize = 11.sp,
+                            color = if (colorValidationError != null)
+                                MaterialTheme.colorScheme.error
+                            else
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                )
+            }
+        }
+
+        // Show overlap error if exists
+        overlapError?.let { error ->
+            Spacer(modifier = Modifier.height(8.dp))
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = "Error",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = error,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+        }
+
+        // Mode selection chips for when no custom pages are specified
+        if (settings.customBWPages.isEmpty() && settings.customColorPages.isEmpty()) {
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text(
+                text = "Default Mode (when no custom pages specified)",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                FilterChip(
+                    selected = settings.colorMode == ColorMode.BW,
+                    onClick = {
+                        onSettingsChange(settings.copy(colorMode = ColorMode.BW))
+                    },
+                    label = { Text("All B&W") }
+                )
+
+                FilterChip(
+                    selected = settings.colorMode == ColorMode.COLOR,
+                    onClick = {
+                        onSettingsChange(settings.copy(colorMode = ColorMode.COLOR))
+                    },
+                    label = { Text("All Color") }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TraditionalColorModeSection(
+    settings: PrintSettings,
+    onSettingsChange: (PrintSettings) -> Unit
+) {
+    Text(
+        text = "Color Mode",
+        fontSize = 14.sp,
+        fontWeight = FontWeight.Medium
+    )
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceEvenly
+    ) {
+        ColorMode.entries.forEach { mode ->
+            FilterChip(
+                selected = settings.colorMode == mode,
+                onClick = {
+                    onSettingsChange(settings.copy(colorMode = mode))
+                },
+                label = {
+                    Text("${mode.displayName} (₹${if (mode == ColorMode.COLOR) "5" else "2"}/page)")
+                }
+            )
+        }
+    }
 }
 
 @SuppressLint("DefaultLocale")
@@ -724,4 +986,118 @@ private fun formatFileSize(sizeInBytes: Long): String {
         sizeInBytes < 1024 * 1024 -> "${sizeInBytes / 1024} KB"
         else -> String.format("%.1f MB", sizeInBytes / (1024.0 * 1024.0))
     }
+}
+
+private fun isValidPageRange(pageRange: String): Boolean {
+    if (pageRange.isEmpty()) return true
+
+    try {
+        val parts = pageRange.split(",")
+        for (part in parts) {
+            val trimmed = part.trim()
+            if (trimmed.contains("-")) {
+                val range = trimmed.split("-")
+                if (range.size != 2) return false
+                val start = range[0].trim().toInt()
+                val end = range[1].trim().toInt()
+                if (start <= 0 || end <= 0 || start > end) return false
+            } else {
+                val page = trimmed.toInt()
+                if (page <= 0) return false
+            }
+        }
+        return true
+    } catch (e: Exception) {
+        return false
+    }
+}
+
+// In DocumentUploadScreen.kt - Update the validation helper functions
+
+// Replace the isValidPageRange function with this enhanced version
+private fun isValidPageRange(pageRange: String, maxPages: Int): Boolean {
+    if (pageRange.isEmpty()) return true
+
+    try {
+        val parts = pageRange.split(",")
+        for (part in parts) {
+            val trimmed = part.trim()
+            if (trimmed.contains("-")) {
+                val range = trimmed.split("-")
+                if (range.size != 2) return false
+                val start = range[0].trim().toInt()
+                val end = range[1].trim().toInt()
+                if (start <= 0 || end <= 0 || start > end || start > maxPages || end > maxPages) return false
+            } else {
+                val page = trimmed.toInt()
+                if (page <= 0 || page > maxPages) return false
+            }
+        }
+        return true
+    } catch (e: Exception) {
+        return false
+    }
+}
+
+// Update the checkPageOverlap function to include max pages validation
+private fun checkPageOverlap(bwPages: String, colorPages: String, maxPages: Int): String? {
+    // First check if page ranges are valid
+    if (bwPages.isNotEmpty() && !isValidPageRange(bwPages, maxPages)) {
+        return "Invalid B&W page range. Pages must be between 1-$maxPages"
+    }
+
+    if (colorPages.isNotEmpty() && !isValidPageRange(colorPages, maxPages)) {
+        return "Invalid Color page range. Pages must be between 1-$maxPages"
+    }
+
+    if (bwPages.isEmpty() || colorPages.isEmpty()) return null
+
+    try {
+        val bwPagesList = parsePageRangeToList(bwPages)
+        val colorPagesList = parsePageRangeToList(colorPages)
+
+        val overlapping = bwPagesList.intersect(colorPagesList.toSet())
+
+        return if (overlapping.isNotEmpty()) {
+            "Pages ${overlapping.sorted().joinToString(", ")} are specified in both B&W and Color"
+        } else null
+    } catch (e: Exception) {
+        return "Invalid page format"
+    }
+}
+
+// Add a specific validation function for individual page ranges
+private fun validatePageRange(pageRange: String, maxPages: Int): String? {
+    if (pageRange.isEmpty()) return null
+
+    if (!isValidPageRange(pageRange, maxPages)) {
+        return "Invalid page range. Pages must be between 1-$maxPages"
+    }
+
+    return null
+}
+
+private fun parsePageRangeToList(pageRange: String): List<Int> {
+    if (pageRange.isEmpty()) return emptyList()
+
+    val pages = mutableSetOf<Int>()
+    val parts = pageRange.split(",")
+
+    for (part in parts) {
+        val trimmed = part.trim()
+        if (trimmed.contains("-")) {
+            val range = trimmed.split("-")
+            if (range.size == 2) {
+                val start = range[0].trim().toInt()
+                val end = range[1].trim().toInt()
+                for (i in start..end) {
+                    pages.add(i)
+                }
+            }
+        } else {
+            pages.add(trimmed.toInt())
+        }
+    }
+
+    return pages.toList()
 }

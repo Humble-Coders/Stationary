@@ -135,6 +135,8 @@ class PrintOrderRepository(firestore: FirebaseFirestore, storage: FirebaseStorag
                 colorMode = parseColorMode(map["colorMode"] as? String),
                 pagesToPrint = parsePageSelection(map["pagesToPrint"] as? String),
                 customPages = map["customPages"] as? String ?: "",
+                customBWPages = map["customBWPages"] as? String ?: "", // NEW
+                customColorPages = map["customColorPages"] as? String ?: "", // NEW
                 copies = (map["copies"] as? Number)?.toInt() ?: 1,
                 paperSize = parsePaperSize(map["paperSize"] as? String),
                 orientation = parseOrientation(map["orientation"] as? String),
@@ -187,21 +189,37 @@ class PrintOrderRepository(firestore: FirebaseFirestore, storage: FirebaseStorag
         }
     }
 
+    // In PrintOrderRepository.kt - Replace the calculatePrice method
+
     fun calculatePrice(settings: PrintSettings, pageCount: Int, shopSettings: ShopSettings, fileType: FileType? = null): Double {
-        val pricePerPage = when (settings.colorMode) {
-            ColorMode.COLOR -> shopSettings.pricePerPage.color
-            ColorMode.BW -> shopSettings.pricePerPage.bw
+        return when (fileType) {
+            FileType.DOCX -> {
+                // DOCX files are treated as single unit
+                val pricePerPage = when (settings.colorMode) {
+                    ColorMode.COLOR -> shopSettings.pricePerPage.color
+                    ColorMode.BW -> shopSettings.pricePerPage.bw
+                }
+                pricePerPage * settings.copies
+            }
+            FileType.PDF, null -> {
+                calculatePdfPrice(settings, pageCount, shopSettings)
+            }
         }
-
-        val actualPagesToPrint = when (fileType) {
-            FileType.DOCX -> 1 // DOCX files are treated as single unit regardless of actual pages
-            FileType.PDF, null -> calculateActualPagesToPrint(settings, pageCount)
-        }
-
-        return pricePerPage * actualPagesToPrint * settings.copies
     }
 
+    private fun calculatePdfPrice(settings: PrintSettings, totalPages: Int, shopSettings: ShopSettings): Double {
+        val bwPages = settings.getEffectiveBWPages(totalPages)
+        val colorPages = settings.getEffectiveColorPages(totalPages)
+
+        val bwCost = bwPages.size * shopSettings.pricePerPage.bw
+        val colorCost = colorPages.size * shopSettings.pricePerPage.color
+
+        return (bwCost + colorCost) * settings.copies
+    }
+
+    // Update the calculateActualPagesToPrint method (keep for backward compatibility)
     private fun calculateActualPagesToPrint(settings: PrintSettings, totalPages: Int): Int {
+        // For backward compatibility with old orders
         return when (settings.pagesToPrint) {
             PageSelection.ALL -> totalPages
             PageSelection.CUSTOM -> {
@@ -214,6 +232,7 @@ class PrintOrderRepository(firestore: FirebaseFirestore, storage: FirebaseStorag
         }
     }
 
+    // Add this helper method for backward compatibility
     private fun parsePageRange(pageRange: String, totalPages: Int): Int {
         try {
             val pages = mutableSetOf<Int>()

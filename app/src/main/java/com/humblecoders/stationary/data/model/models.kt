@@ -98,15 +98,85 @@ data class ShopSettings(
     )
 }
 
+// In models.kt - Replace the PrintSettings data class
+
 data class PrintSettings(
     val colorMode: ColorMode = ColorMode.BW,
     val pagesToPrint: PageSelection = PageSelection.ALL,
-    val customPages: String = "",
+    val customPages: String = "", // Keep for backward compatibility
+    val customBWPages: String = "", // NEW: Black and white custom pages
+    val customColorPages: String = "", // NEW: Color custom pages
     val copies: Int = 1,
     val paperSize: PaperSize = PaperSize.A4,
     val orientation: Orientation = Orientation.PORTRAIT,
     val quality: Quality = Quality.NORMAL
-)
+) {
+    // Helper function to get effective pages for black and white
+    fun getEffectiveBWPages(totalPages: Int): List<Int> {
+        return when {
+            customBWPages.isNotEmpty() -> parsePageRange(customBWPages, totalPages)
+            colorMode == ColorMode.BW && pagesToPrint == PageSelection.ALL -> (1..totalPages).toList()
+            colorMode == ColorMode.BW && customPages.isNotEmpty() -> parsePageRange(customPages, totalPages)
+            else -> emptyList()
+        }
+    }
+
+    // Helper function to get effective pages for color
+    fun getEffectiveColorPages(totalPages: Int): List<Int> {
+        return when {
+            customColorPages.isNotEmpty() -> parsePageRange(customColorPages, totalPages)
+            colorMode == ColorMode.COLOR && pagesToPrint == PageSelection.ALL -> (1..totalPages).toList()
+            colorMode == ColorMode.COLOR && customPages.isNotEmpty() -> parsePageRange(customPages, totalPages)
+            else -> emptyList()
+        }
+    }
+
+    // Helper function to get all pages being printed
+    fun getAllPrintedPages(totalPages: Int): List<Int> {
+        val bwPages = getEffectiveBWPages(totalPages)
+        val colorPages = getEffectiveColorPages(totalPages)
+        return (bwPages + colorPages).distinct().sorted()
+    }
+
+    // Helper function to check if using mixed color mode
+    fun isMixedColorMode(totalPages: Int): Boolean {
+        val bwPages = getEffectiveBWPages(totalPages)
+        val colorPages = getEffectiveColorPages(totalPages)
+        return bwPages.isNotEmpty() && colorPages.isNotEmpty()
+    }
+
+    private fun parsePageRange(pageRange: String, totalPages: Int): List<Int> {
+        if (pageRange.isEmpty()) return emptyList()
+
+        try {
+            val pages = mutableSetOf<Int>()
+            val parts = pageRange.split(",")
+
+            for (part in parts) {
+                val trimmed = part.trim()
+                if (trimmed.contains("-")) {
+                    val range = trimmed.split("-")
+                    if (range.size == 2) {
+                        val start = range[0].trim().toInt().coerceIn(1, totalPages)
+                        val end = range[1].trim().toInt().coerceIn(1, totalPages)
+                        for (i in start..end) {
+                            pages.add(i)
+                        }
+                    }
+                } else {
+                    val page = trimmed.toInt()
+                    if (page in 1..totalPages) {
+                        pages.add(page)
+                    }
+                }
+            }
+
+            return pages.toList().sorted()
+        } catch (e: Exception) {
+            return emptyList()
+        }
+    }
+}
 
 data class PricePerPage(
     val bw: Double = 2.0,
