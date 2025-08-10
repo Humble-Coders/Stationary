@@ -32,12 +32,30 @@ object FileUtils {
         return fileSize
     }
 
+
+    fun isPptxFile(context: Context, uri: Uri): Boolean {
+        val fileName = getFileName(context, uri)
+        return fileName.endsWith(".pptx", ignoreCase = true)
+    }
+
+    // Update the isValidFile method
+    fun isImageFile(context: Context, uri: Uri): Boolean {
+        val fileName = getFileName(context, uri)
+        return fileName.endsWith(".jpg", ignoreCase = true) ||
+                fileName.endsWith(".jpeg", ignoreCase = true) ||
+                fileName.endsWith(".png", ignoreCase = true) ||
+                fileName.endsWith(".webp", ignoreCase = true)
+    }
+
+    // Update the isValidFile method
     fun isValidFile(context: Context, uri: Uri): Boolean {
         val fileName = getFileName(context, uri)
         val fileSize = getFileSize(context, uri)
 
         val isValidFormat = fileName.endsWith(".pdf", ignoreCase = true) ||
-                fileName.endsWith(".docx", ignoreCase = true)
+                fileName.endsWith(".docx", ignoreCase = true) ||
+                fileName.endsWith(".pptx", ignoreCase = true) ||
+                isImageFile(context, uri) // Add this line
 
         return isValidFormat &&
                 fileSize > 0 &&

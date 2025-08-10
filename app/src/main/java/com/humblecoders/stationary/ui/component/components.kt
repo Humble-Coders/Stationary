@@ -438,21 +438,24 @@ private fun getDocumentCount(order: PrintOrder): Int {
     }
 }
 
-// Add this helper function to display document names properly
+
+
+private fun getFileTypeFromExtension(extension: String): String {
+    return when (extension) {
+        ".pdf" -> "PDF"
+        ".docx" -> "Word"
+        ".pptx" -> "PowerPoint"
+        ".jpg" -> "Image" // Add this line
+        else -> "Document"
+    }
+}
+
+// Update getDisplayDocumentName function to handle PPTX:
 private fun getDisplayDocumentName(order: PrintOrder): String {
     return when {
         order.documentName.size == 1 -> order.documentName.first()
         order.documentName.size > 1 -> "${order.documentCount} ${getFileTypeFromExtension(order.fileType)} files"
         else -> order.documentName.firstOrNull() ?: "Unknown document"
-    }
-}
-
-// Helper function to get file type display name
-private fun getFileTypeFromExtension(extension: String): String {
-    return when (extension) {
-        ".pdf" -> "PDF"
-        ".docx" -> "Word"
-        else -> "Document"
     }
 }
 

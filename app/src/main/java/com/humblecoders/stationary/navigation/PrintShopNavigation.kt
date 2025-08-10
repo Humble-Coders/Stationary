@@ -117,9 +117,14 @@ fun PrintShopNavigation(
                     navController.popBackStack()
                 },
                 onNavigateToPayment = { orderId, amount, customerPhone ->
-                    // Set the payment info in the ViewModel instead of passing through navigation
-                    paymentViewModel.setPaymentInfo(orderId, amount, customerPhone)
-                    navController.navigate(Screen.Payment.route)
+                    // Only navigate to payment for PDF files
+                    if (amount > 0) {
+                        paymentViewModel.setPaymentInfo(orderId, amount, customerPhone)
+                        navController.navigate(Screen.Payment.route)
+                    } else {
+                        // For non-PDF files, go back to home
+                        navController.popBackStack()
+                    }
                 }
             )
         }

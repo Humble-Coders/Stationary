@@ -2,6 +2,7 @@ package com.humblecoders.stationary.ui.viewmodel
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.util.Log
@@ -90,6 +91,8 @@ class DocumentUploadViewModel(
                 val detectedFileType = when {
                     FileUtils.isPdfFile(context, firstUri) -> FileType.PDF
                     FileUtils.isDocxFile(context, firstUri) -> FileType.DOCX
+                    FileUtils.isPptxFile(context, firstUri) -> FileType.PPTX
+                    FileUtils.isImageFile(context, firstUri) -> FileType.IMAGE // Add this line
                     else -> {
                         _uiState.value = _uiState.value.copy(error = "Unsupported file format")
                         return@launch
@@ -113,11 +116,12 @@ class DocumentUploadViewModel(
                     return@launch
                 }
 
-                // Validate all files are of the same type
                 val invalidFiles = uris.filter { uri ->
                     when (detectedFileType) {
                         FileType.PDF -> !FileUtils.isPdfFile(context, uri)
                         FileType.DOCX -> !FileUtils.isDocxFile(context, uri)
+                        FileType.PPTX -> !FileUtils.isPptxFile(context, uri)
+                        FileType.IMAGE -> !FileUtils.isImageFile(context, uri) // Add this line
                     }
                 }
 
@@ -201,11 +205,58 @@ class DocumentUploadViewModel(
                             printSettings = PrintSettings(pagesToPrint = PageSelection.ALL)
                         )
                     }
+                    FileType.PPTX -> { // Add this entire case
+                        DocumentItem(
+                            id = documentId,
+                            uri = uri,
+                            fileName = fileName,
+                            fileSize = fileSize,
+                            fileType = fileType,
+                            pageCount = 1,
+                            needsUserPageInput = false,
+                            userInputPageCount = 0,
+                            printSettings = PrintSettings(pagesToPrint = PageSelection.ALL)
+                        )
+                    }
+                    FileType.IMAGE -> { // Add this entire case
+                        val previewBitmap = generateImagePreview(context, uri)
+                        DocumentItem(
+                            id = documentId,
+                            uri = uri,
+                            fileName = fileName,
+                            fileSize = fileSize,
+                            fileType = fileType,
+                            pageCount = 1,
+                            needsUserPageInput = false,
+                            userInputPageCount = 0,
+                            printSettings = PrintSettings(
+                                pagesToPrint = PageSelection.ALL,
+                                copies = 1 // Default to 1 copy for images
+                            ),
+                            previewBitmap = previewBitmap
+                        )
+                    }
                 }
             } catch (e: Exception) {
                 Log.e("DocumentUploadVM", "Error processing file", e)
                 null
             }
+        }
+    }
+
+    private fun generateImagePreview(context: Context, uri: Uri): Bitmap? {
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                val originalBitmap = BitmapFactory.decodeStream(inputStream)
+                if (originalBitmap != null) {
+                    val width = 200
+                    val height = (width * originalBitmap.height / originalBitmap.width.toFloat()).toInt()
+                    Bitmap.createScaledBitmap(originalBitmap, width, height, true)
+                } else null
+            }
+        } catch (e: Exception) {
+            Log.w("DocumentUploadVM", "Cannot generate image preview: ${e.message}")
+            null
         }
     }
 
@@ -499,7 +550,114 @@ class DocumentUploadViewModel(
             customerPhone = _uiState.value.customerPhone
         )
     }
+// In DocumentUploadViewModel.kt - Add this new method
 
+    fun submitOrderDirectly(onOrderCreated: () -> Unit) {
+        val currentUser = FirebaseAuth.getInstance().currentUser
+        if (currentUser == null) {
+            _uiState.value = _uiState.value.copy(error = "Please sign in to continue")
+            return
+        }
+
+        if (!_uiState.value.isShopOpen) {
+            _uiState.value = _uiState.value.copy(error = "Shop is currently closed")
+            return
+        }
+
+        if (_uiState.value.documents.isEmpty()) {
+            _uiState.value = _uiState.value.copy(error = "Please select at least one document")
+            return
+        }
+
+        // For non-PDF files, skip payment validation and directly upload
+        viewModelScope.launch {
+            try {
+                _uiState.value = _uiState.value.copy(isUploading = true, error = null)
+
+                // Upload all documents
+                val documentUrls = mutableListOf<String>()
+                val documentNames = mutableListOf<String>()
+                val printSettingsArray = mutableListOf<Map<String, Any>>()
+                val individualDocumentsArray = mutableListOf<Map<String, Any>>()
+                val documents = _uiState.value.documents
+
+                for ((index, document) in documents.withIndex()) {
+                    _uiState.value = _uiState.value.copy(
+                        uploadProgress = (index.toFloat() / documents.size)
+                    )
+
+                    val documentUrl = printOrderRepository.uploadDocument(document.uri!!)
+                    documentUrls.add(documentUrl)
+                    documentNames.add(document.fileName)
+
+                    // Convert PrintSettings to Map
+                    val settingsMap = mapOf(
+                        "colorMode" to document.printSettings.colorMode.name,
+                        "pagesToPrint" to document.printSettings.pagesToPrint.name,
+                        "customPages" to document.printSettings.customPages,
+                        "customBWPages" to document.printSettings.customBWPages,
+                        "customColorPages" to document.printSettings.customColorPages,
+                        "copies" to document.printSettings.copies,
+                        "paperSize" to document.printSettings.paperSize.name,
+                        "orientation" to document.printSettings.orientation.name,
+                        "quality" to document.printSettings.quality.name
+                    )
+                    printSettingsArray.add(settingsMap)
+
+                    // Individual document data
+                    val docData = mapOf(
+                        "fileName" to document.fileName,
+                        "fileSize" to document.fileSize,
+                        "fileType" to document.fileType.extension,
+                        "pageCount" to document.getEffectivePageCount(),
+                        "printSettings" to settingsMap,
+                        "calculatedPrice" to document.calculatedPrice
+                    )
+                    individualDocumentsArray.add(docData)
+                }
+
+                val totalSize = documents.sumOf { it.fileSize }
+                val totalPages = documents.sumOf { it.getEffectivePageCount() }
+
+                val order = PrintOrder(
+                    customerId = _uiState.value.customerId,
+                    customerPhone = _uiState.value.customerPhone,
+                    documentName = documentNames,
+                    documentUrl = documentUrls,
+                    documentSize = totalSize,
+                    fileType = _uiState.value.currentFileType?.extension ?: ".jpg",
+                    pageCount = totalPages,
+                    printSettings = printSettingsArray,
+                    individualDocuments = individualDocumentsArray,
+                    documentCount = documents.size,
+                    hasSettings = true,
+                    isPaid = true, // Mark as paid for non-PDF files
+                    canAutoPrint = true, // Allow auto-print for non-PDF files
+                    paymentStatus = com.humblecoders.stationary.data.model.PaymentStatus.PAID // Set as paid
+                )
+
+                val orderId = printOrderRepository.createOrder(order)
+
+                _uiState.value = _uiState.value.copy(
+                    isUploading = false,
+                    orderId = orderId,
+                    uploadProgress = 1f
+                )
+
+                // Clear state and call success callback
+                clearState()
+                onOrderCreated()
+
+            } catch (e: Exception) {
+                Log.e("DocumentUploadVM", "Upload failed", e)
+                _uiState.value = _uiState.value.copy(
+                    isUploading = false,
+                    error = "Upload failed: ${e.message}",
+                    uploadProgress = 0f
+                )
+            }
+        }
+    }
 
     private fun observeShopStatus() {
         viewModelScope.launch {
@@ -586,3 +744,4 @@ private fun parsePageRangeToListForDocument(pageRange: String): List<Int> {
 
     return pages.toList()
 }
+

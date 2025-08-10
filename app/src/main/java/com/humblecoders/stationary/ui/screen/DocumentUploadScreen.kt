@@ -194,8 +194,10 @@ fun DocumentUploadScreen(
                 }
             }
 
-            // Total Price Display
-            if (uiState.documents.isNotEmpty()) {
+            // In DocumentUploadScreen.kt - Update the Total Price Display section
+
+// Total Price Display - only show for PDF files
+            if (uiState.documents.isNotEmpty() && uiState.currentFileType == FileType.PDF) {
                 Card(
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.primaryContainer
@@ -228,50 +230,127 @@ fun DocumentUploadScreen(
                         )
                     }
                 }
+            } else if (uiState.documents.isNotEmpty()) {
+                // For non-PDF files, show info card instead of price
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Info,
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
 
-                // Action Buttons
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = "Ready to Upload",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Text(
+                            text = "${uiState.documents.size} ${uiState.currentFileType?.displayName?.lowercase()} ${if (uiState.documents.size == 1) "file" else "files"} • No payment required",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+                // In DocumentUploadScreen.kt - Replace the Action Buttons section
+
+// Action Buttons
                 Column(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Button(
-                        onClick = {
-                            viewModel.submitOrderWithPayment { orderId ->
-                                onNavigateToPayment(orderId, uiState.totalCalculatedPrice, uiState.customerPhone)
+                    if (uiState.currentFileType == FileType.PDF) {
+                        // PDF files - show payment options
+                        Button(
+                            onClick = {
+                                viewModel.submitOrderWithPayment { orderId ->
+                                    onNavigateToPayment(orderId, uiState.totalCalculatedPrice, uiState.customerPhone)
+                                }
+                            },
+                            enabled = !uiState.isUploading && uiState.documents.isNotEmpty(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp)
+                        ) {
+                            if (uiState.isUploading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Uploading... ${(uiState.uploadProgress * 100).toInt()}%")
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Upload,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Upload & Pay Now", fontSize = 16.sp)
                             }
-                        },
-                        enabled = !uiState.isUploading && uiState.documents.isNotEmpty(),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp)
-                    ) {
-                        if (uiState.isUploading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                strokeWidth = 2.dp
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Uploading... ${(uiState.uploadProgress * 100).toInt()}%")
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.Upload,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Upload & Pay Now", fontSize = 16.sp)
+                        }
+
+                        OutlinedButton(
+                            onClick = viewModel::submitOrderWithoutPayment,
+                            enabled = !uiState.isUploading,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                        ) {
+                            Text("Upload Without Payment")
+                        }
+                    } else {
+                        // Non-PDF files - only upload option (no payment)
+                        Button(
+                            onClick = {
+                                viewModel.submitOrderDirectly {
+                                    // Navigate back to home after successful upload
+                                    onNavigateBack()
+                                }
+                            },
+                            enabled = !uiState.isUploading && uiState.documents.isNotEmpty(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp)
+                        ) {
+                            if (uiState.isUploading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Uploading... ${(uiState.uploadProgress * 100).toInt()}%")
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Upload,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Upload Documents", fontSize = 16.sp)
+                            }
                         }
                     }
+                }
 
-                    OutlinedButton(
-                        onClick = viewModel::submitOrderWithoutPayment,
-                        enabled = !uiState.isUploading,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                    ) {
-                        Text("Upload Without Payment")
-                    }
                 }
             }
 
@@ -307,8 +386,6 @@ fun DocumentUploadScreen(
                     }
                 }
             }
-        }
-    }
 }
 
 @Composable
@@ -381,7 +458,7 @@ private fun FileSelectionPrompt(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "Supported: PDF, Word (DOCX) • Max 10 files",
+                text = "Supported: PDF, Word (DOCX), PowerPoint (PPTX), Images (JPG, PNG) • Max 10 files", // Update this line
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                 fontSize = 12.sp
             )
@@ -523,11 +600,14 @@ private fun DocumentCard(
                     modifier = Modifier.weight(1f),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // PDF Preview or DOCX Icon
-                    if (document.fileType == FileType.PDF && document.previewBitmap != null) {
+                    if ((document.fileType == FileType.PDF || document.fileType == FileType.IMAGE) && document.previewBitmap != null) {
                         Image(
                             bitmap = document.previewBitmap.asImageBitmap(),
-                            contentDescription = "PDF Preview",
+                            contentDescription = when (document.fileType) {
+                                FileType.PDF -> "PDF Preview"
+                                FileType.IMAGE -> "Image Preview"
+                                else -> "Preview"
+                            },
                             modifier = Modifier
                                 .size(60.dp)
                                 .clip(RoundedCornerShape(8.dp))
@@ -543,12 +623,18 @@ private fun DocumentCard(
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = if (document.fileType == FileType.PDF) Icons.Outlined.Description else Icons.Default.Description,
+                                imageVector = when (document.fileType) {
+                                    FileType.PDF -> Icons.Outlined.Description
+                                    FileType.DOCX -> Icons.Default.Description
+                                    FileType.PPTX -> Icons.Default.Description
+                                    FileType.IMAGE -> Icons.Default.Description // Use same icon for images
+                                },
                                 contentDescription = null,
                                 modifier = Modifier.size(30.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                    }
                     }
 
                     Spacer(modifier = Modifier.width(12.dp))
@@ -567,6 +653,8 @@ private fun DocumentCard(
                         val info = when (document.fileType) {
                             FileType.PDF -> "${formatFileSize(document.fileSize)} • ${document.getEffectivePageCount()} pages"
                             FileType.DOCX -> "${formatFileSize(document.fileSize)} • Word Document"
+                            FileType.PPTX -> "${formatFileSize(document.fileSize)} • PowerPoint Presentation"
+                            FileType.IMAGE -> "${formatFileSize(document.fileSize)} • Image File" // Add this line
                         }
 
                         Text(
@@ -575,12 +663,21 @@ private fun DocumentCard(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
 
-                        Text(
-                            text = "₹${String.format("%.2f", document.calculatedPrice)}",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                        if (document.fileType == FileType.PDF) {
+                            Text(
+                                text = "₹${String.format("%.2f", document.calculatedPrice)}",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        } else {
+                            Text(
+                                text = "No payment",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
 
@@ -617,27 +714,26 @@ private fun DocumentCard(
                 )
             }
 
-            // Expanded Settings Panel
-            AnimatedVisibility(
-                visible = document.isExpanded,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                Column(modifier = Modifier.padding(top = 16.dp)) {
-                    HorizontalDivider()
-                    Spacer(modifier = Modifier.height(16.dp))
+        AnimatedVisibility(
+            visible = document.isExpanded && document.fileType != FileType.IMAGE, // Add this condition
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically()
+        ) {
+            Column(modifier = Modifier.padding(top = 16.dp)) {
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(16.dp))
 
-                    PrintSettingsPanel(
-                        settings = document.printSettings,
-                        fileType = document.fileType,
-                        document= document,
-                        onSettingsChange = onUpdateSettings
-                    )
-                }
+                PrintSettingsPanel(
+                    settings = document.printSettings,
+                    fileType = document.fileType,
+                    document = document,
+                    onSettingsChange = onUpdateSettings
+                )
             }
         }
+        }
     }
-}
+
 
 // In DocumentUploadScreen.kt - Replace the PrintSettingsPanel composable
 
@@ -650,15 +746,14 @@ private fun PrintSettingsPanel(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
 
-        // For PDF files, show new mixed color mode interface
         if (fileType == FileType.PDF) {
             PdfColorModeSection(
                 settings = settings,
-                maxPages = document.getEffectivePageCount(), // Pass max pages
+                maxPages = document.getEffectivePageCount(),
                 onSettingsChange = onSettingsChange
             )
-        } else {
-            // For DOCX files, show traditional color mode selection
+        } else if (fileType == FileType.DOCX || fileType == FileType.PPTX) { // Update this condition
+            // For DOCX and PPTX files only, show traditional color mode selection
             TraditionalColorModeSection(
                 settings = settings,
                 onSettingsChange = onSettingsChange

@@ -109,8 +109,8 @@ class PrintOrderRepository(firestore: FirebaseFirestore, storage: FirebaseStorag
 
     fun calculatePrice(settings: PrintSettings, pageCount: Int, shopSettings: ShopSettings, fileType: FileType? = null): Double {
         return when (fileType) {
-            FileType.DOCX -> {
-                // DOCX files are treated as single unit
+            FileType.DOCX, FileType.PPTX, FileType.IMAGE -> { // Add FileType.IMAGE here
+                // DOCX, PPTX and IMAGE files are treated as single unit
                 val pricePerPage = when (settings.colorMode) {
                     ColorMode.COLOR -> shopSettings.pricePerPage.color
                     ColorMode.BW -> shopSettings.pricePerPage.bw

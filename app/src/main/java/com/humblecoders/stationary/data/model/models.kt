@@ -24,6 +24,8 @@ data class DocumentItem(
                 if (needsUserPageInput) userInputPageCount else pageCount
             }
             FileType.DOCX -> 1
+            FileType.PPTX -> 1
+            FileType.IMAGE -> 1
         }
     }
 }
@@ -216,5 +218,8 @@ sealed class PaymentResult {
 
 enum class FileType(val displayName: String, val extension: String) {
     PDF("PDF Document", ".pdf"),
-    DOCX("Word Document", ".docx")
+    DOCX("Word Document", ".docx"),
+    PPTX("PowerPoint Presentation", ".pptx"), // Add this line
+    IMAGE("Image", ".jpg") // Add this line
+
 }
