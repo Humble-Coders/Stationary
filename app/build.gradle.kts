@@ -68,6 +68,7 @@ dependencies {
     // Payment
     implementation("com.razorpay:checkout:1.6.33")
 
+
     // DataStore
     implementation("androidx.datastore:datastore-preferences:1.0.0")
 
@@ -82,6 +83,11 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.5.0");
 
     implementation ("com.google.code.gson:gson:2.10.1")
+
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    implementation("com.google.firebase:firebase-functions")
+
 
 
     // REMOVED: Duplicate Material3 dependency

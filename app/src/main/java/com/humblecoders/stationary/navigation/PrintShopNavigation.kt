@@ -2,10 +2,10 @@ package com.humblecoders.stationary.navigation
 
 import android.app.Activity
 import android.content.Intent
+import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -26,8 +26,6 @@ sealed class Screen(val route: String) {
     object Home : Screen("home")
     object DocumentUpload : Screen("document_upload")
     object OrderHistory : Screen("order_history")
-    object Payment : Screen("payment") // Simplified route
-
 }
 
 @Composable
@@ -42,7 +40,6 @@ fun PrintShopNavigation(
     activity: Activity,
     googleSignInLauncher: ActivityResultLauncher<Intent>
 ) {
-
     // Check if user is already logged in
     val startDestination = if (FirebaseAuth.getInstance().currentUser != null) {
         Screen.Home.route
@@ -83,11 +80,8 @@ fun PrintShopNavigation(
             )
         }
 
-
-        // In PrintShopNavigation.kt, update the Home screen composable:
-
         composable(Screen.Home.route) {
-            // Initialize HomeViewModel with current user when navigating to Home
+            // Initialize ViewModels with current user
             LaunchedEffect(Unit) {
                 val currentUser = FirebaseAuth.getInstance().currentUser
                 if (currentUser != null) {
@@ -113,51 +107,12 @@ fun PrintShopNavigation(
         composable(Screen.DocumentUpload.route) {
             DocumentUploadScreen(
                 viewModel = documentUploadViewModel,
+                paymentViewModel = paymentViewModel,
+                activity = activity as ComponentActivity,
                 onNavigateBack = {
                     navController.popBackStack()
-                },
-                onNavigateToPayment = { orderId, amount, customerPhone ->
-                    // Only navigate to payment for PDF files
-                    if (amount > 0) {
-                        paymentViewModel.setPaymentInfo(orderId, amount, customerPhone)
-                        navController.navigate(Screen.Payment.route)
-                    } else {
-                        // For non-PDF files, go back to home
-                        navController.popBackStack()
-                    }
                 }
             )
-        }
-
-        composable(Screen.Payment.route) {
-            // Get the payment info from the ViewModel instead of navigation arguments
-            val paymentInfo = paymentViewModel.currentPaymentInfo.collectAsState().value
-
-            if (paymentInfo != null) {
-                PaymentScreen(
-                    viewModel = paymentViewModel,
-                    orderId = paymentInfo.orderId,
-                    amount = paymentInfo.amount,
-                    customerPhone = paymentInfo.customerPhone,
-                    activity = activity,
-                    onNavigateBack = {
-                        navController.popBackStack()
-                    },
-                    onPaymentSuccess = {
-                        documentUploadViewModel.clearState()
-                        paymentViewModel.clearState()
-
-                        navController.navigate(Screen.Home.route) {
-                            popUpTo(Screen.DocumentUpload.route) { inclusive = true }
-                        }
-                    }
-                )
-            } else {
-                // Handle case where payment info is not available
-                LaunchedEffect(Unit) {
-                    navController.popBackStack()
-                }
-            }
         }
 
         composable(Screen.OrderHistory.route) {

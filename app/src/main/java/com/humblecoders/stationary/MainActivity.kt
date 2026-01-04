@@ -28,6 +28,7 @@ import com.humblecoders.stationary.ui.viewmodel.auth.ProfileViewModel
 import com.humblecoders.stationary.ui.viewmodel.auth.RegisterViewModel
 import com.razorpay.PaymentData
 import com.razorpay.PaymentResultWithDataListener
+import org.json.JSONObject
 
 class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
 
@@ -39,7 +40,6 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
     private lateinit var profileRepository: ProfileRepository
     private lateinit var printOrderRepository: PrintOrderRepository
     private lateinit var shopSettingsRepository: ShopSettingsRepository
-    private lateinit var razorpayService: RazorpayService
 
     private lateinit var loginViewModel: LoginViewModel
     private lateinit var registerViewModel: RegisterViewModel
@@ -50,22 +50,17 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
 
     private lateinit var googleSignInLauncher: ActivityResultLauncher<Intent>
 
-    override fun onPaymentSuccess(razorpayPaymentId: String?, paymentData: PaymentData) {
-        razorpayPaymentId?.let { paymentId ->
-            paymentViewModel.handlePaymentSuccess(paymentId, paymentData)
-        }
-    }
-
-    override fun onPaymentError(errorCode: Int, response: String?, paymentData: PaymentData?) {
-        paymentViewModel.handlePaymentError(errorCode, response ?: "Payment failed")
-    }
+    lateinit var razorpayService: RazorpayService
+        private set
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         initializeFirebase()
         initializeRepositories()
         initializeGoogleSignInLauncher()
+        initializeRazorpayService()
         initializeViewModels()
+        logAuthState()
 
         setContent {
             StationaryTheme {
@@ -74,10 +69,52 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
         }
     }
 
+    override fun onPaymentSuccess(razorpayPaymentId: String?, paymentData: PaymentData?) {
+        Log.d("MainActivity", "Payment success: $razorpayPaymentId")
+
+        paymentData?.let { data ->
+            Log.d("MainActivity", "Payment data: ${data.data}")
+
+            try {
+                val dataJson = JSONObject(data.data as Map<*, *>)
+
+                Log.d("MainActivity", "Order ID: ${dataJson.optString("razorpay_order_id")}")
+                Log.d("MainActivity", "Payment ID: ${dataJson.optString("razorpay_payment_id")}")
+                Log.d("MainActivity", "Signature: ${dataJson.optString("razorpay_signature")}")
+
+            } catch (e: Exception) {
+                Log.e("MainActivity", "JSON error", e)
+            }
+
+        }
+
+        // RazorpayService callback will handle the actual processing
+    }
+
+    override fun onPaymentError(errorCode: Int, errorMessage: String?, paymentData: PaymentData?) {
+        Log.e("MainActivity", "Payment error: $errorCode - $errorMessage")
+
+        paymentData?.let { data ->
+            Log.e("MainActivity", "Error data: ${data.data}")
+        }
+
+        // RazorpayService callback will handle the error
+    }
+
     private fun initializeFirebase() {
         firebaseAuth = FirebaseAuth.getInstance()
         firestore = FirebaseFirestore.getInstance()
         storage = FirebaseStorage.getInstance()
+    }
+
+    private fun logAuthState() {
+        val currentUser = FirebaseAuth.getInstance().currentUser
+        if (currentUser != null) {
+            Log.d("MainActivity", "User authenticated: ${currentUser.uid}")
+            Log.d("MainActivity", "Email: ${currentUser.email}")
+        } else {
+            Log.e("MainActivity", "NO USER AUTHENTICATED!")
+        }
     }
 
     private fun initializeRepositories() {
@@ -85,10 +122,11 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
         profileRepository = ProfileRepository(firebaseAuth, firestore, this)
         printOrderRepository = PrintOrderRepository(firestore, storage)
         shopSettingsRepository = ShopSettingsRepository(firestore)
-        razorpayService = RazorpayService()
     }
 
-    // In MainActivity.kt, update the initializeGoogleSignInLauncher method:
+    private fun initializeRazorpayService() {
+        razorpayService = RazorpayService(this)
+    }
 
     private fun initializeGoogleSignInLauncher() {
         googleSignInLauncher = registerForActivityResult(
@@ -106,7 +144,6 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                     Log.d("MainActivity", "Google Sign-In cancelled by user")
                     loginViewModel.cancelGoogleSignIn()
                     registerViewModel.cancelGoogleSignIn()
-                    // Clear Google state on cancellation
                     loginViewModel.clearGoogleSignInState()
                     registerViewModel.clearGoogleSignInState()
                 }
@@ -114,7 +151,6 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                     Log.d("MainActivity", "Google Sign-In failed with code: ${result.resultCode}")
                     loginViewModel.cancelGoogleSignIn()
                     registerViewModel.cancelGoogleSignIn()
-                    // Clear Google state on failure
                     loginViewModel.clearGoogleSignInState()
                     registerViewModel.clearGoogleSignInState()
                 }
@@ -128,7 +164,7 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
         profileViewModel = ProfileViewModel(profileRepository, authRepository)
         homeViewModel = HomeViewModel(printOrderRepository, shopSettingsRepository)
         documentUploadViewModel = DocumentUploadViewModel(printOrderRepository, shopSettingsRepository)
-        paymentViewModel = PaymentViewModel(printOrderRepository, razorpayService)
+        paymentViewModel = PaymentViewModel()
     }
 
     @Composable

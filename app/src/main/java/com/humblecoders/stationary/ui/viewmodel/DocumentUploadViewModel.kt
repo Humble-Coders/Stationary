@@ -16,6 +16,7 @@ import com.humblecoders.stationary.data.model.PageSelection
 import com.humblecoders.stationary.data.model.PrintOrder
 import com.humblecoders.stationary.data.model.PrintSettings
 import com.humblecoders.stationary.data.model.ShopSettings
+import com.humblecoders.stationary.data.repository.CloudFunctionsRepository
 import com.humblecoders.stationary.data.repository.PrintOrderRepository
 import com.humblecoders.stationary.data.repository.ShopSettingsRepository
 import com.humblecoders.stationary.util.FileUtils
@@ -77,6 +78,88 @@ class DocumentUploadViewModel(
             customerId = customerId,
             customerPhone = customerPhone
         )
+    }
+
+    fun submitOrderWithPayment(onOrderCreated: (String) -> Unit) {
+        val currentUser = FirebaseAuth.getInstance().currentUser
+        if (currentUser == null) {
+            _uiState.value = _uiState.value.copy(error = "Please sign in to continue")
+            return
+        }
+
+        if (!_uiState.value.isShopOpen) {
+            _uiState.value = _uiState.value.copy(error = "Shop is currently closed")
+            return
+        }
+
+        if (_uiState.value.documents.isEmpty()) {
+            _uiState.value = _uiState.value.copy(error = "Please select at least one document")
+            return
+        }
+
+        // Validate all documents
+        val invalidDocuments = _uiState.value.documents.filter { doc ->
+            doc.needsUserPageInput && doc.userInputPageCount <= 0
+        }
+
+        if (invalidDocuments.isNotEmpty()) {
+            _uiState.value = _uiState.value.copy(
+                error = "Please enter page count for: ${invalidDocuments.joinToString(", ") { it.fileName }}"
+            )
+            return
+        }
+
+        viewModelScope.launch {
+            try {
+                _uiState.value = _uiState.value.copy(isUploading = true, error = null)
+
+                // Upload documents to Firebase Storage
+                val uploadedDocuments = mutableListOf<DocumentItem>()
+                val documents = _uiState.value.documents
+
+                for ((index, document) in documents.withIndex()) {
+                    _uiState.value = _uiState.value.copy(
+                        uploadProgress = (index.toFloat() / documents.size)
+                    )
+
+                    val documentUrl = printOrderRepository.uploadDocument(document.uri!!)
+                    uploadedDocuments.add(document.copy(uri = Uri.parse(documentUrl)))
+                }
+
+                // Create order via Cloud Function
+                val cloudFunctionsRepo = CloudFunctionsRepository()
+                val createOrderResult = cloudFunctionsRepo.createOrder(
+                    documents = uploadedDocuments,
+                    totalAmount = _uiState.value.totalCalculatedPrice,
+                    customerPhone = _uiState.value.customerPhone
+                )
+
+                createOrderResult.fold(
+                    onSuccess = { response ->
+                        _uiState.value = _uiState.value.copy(
+                            isUploading = false,
+                            orderId = response.orderId,
+                            uploadProgress = 1f
+                        )
+                        onOrderCreated(response.orderId)
+                    },
+                    onFailure = { e ->
+                        _uiState.value = _uiState.value.copy(
+                            isUploading = false,
+                            error = "Failed to create order: ${e.message}",
+                            uploadProgress = 0f
+                        )
+                    }
+                )
+            } catch (e: Exception) {
+                Log.e("DocumentUploadVM", "Upload failed", e)
+                _uiState.value = _uiState.value.copy(
+                    isUploading = false,
+                    error = "Upload failed: ${e.message}",
+                    uploadProgress = 0f
+                )
+            }
+        }
     }
 
     fun selectFiles(context: Context, uris: List<Uri>) {
@@ -372,9 +455,7 @@ class DocumentUploadViewModel(
         )
     }
 
-    fun submitOrderWithPayment(onOrderCreated: (String) -> Unit) {
-        submitOrder(withPayment = true, onOrderCreated)
-    }
+
 
     fun submitOrderWithoutPayment() {
         submitOrder(withPayment = false) { }

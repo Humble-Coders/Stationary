@@ -2,6 +2,7 @@ package com.humblecoders.stationary.ui.screen
 
 import android.annotation.SuppressLint
 import android.net.Uri
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -80,22 +81,104 @@ import com.humblecoders.stationary.data.model.Orientation
 import com.humblecoders.stationary.data.model.PrintSettings
 import com.humblecoders.stationary.ui.component.ShopClosedCard
 import com.humblecoders.stationary.ui.viewmodel.DocumentUploadViewModel
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import com.humblecoders.stationary.MainActivity
+import com.humblecoders.stationary.data.service.RazorpayService
+import com.humblecoders.stationary.ui.viewmodel.PaymentViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DocumentUploadScreen(
     viewModel: DocumentUploadViewModel,
-    onNavigateBack: () -> Unit,
-    onNavigateToPayment: (String, Double, String) -> Unit
+    paymentViewModel: PaymentViewModel,
+    activity: ComponentActivity,
+    onNavigateBack: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val paymentState by paymentViewModel.uiState.collectAsState()
     val context = LocalContext.current
+
+    // Get Razorpay service from MainActivity
+    val razorpayService = remember(activity) {
+        (activity as? MainActivity)?.razorpayService
+    }
 
     val multipleFilePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents()
     ) { uris: List<Uri> ->
         if (uris.isNotEmpty()) {
             viewModel.selectFiles(context, uris)
+        }
+    }
+
+    // Handle payment initiation
+    LaunchedEffect(paymentState.razorpayOrderId) {
+        val orderId = paymentState.razorpayOrderId
+        val keyId = paymentState.razorpayKeyId
+        val amount = paymentState.amount
+
+        if (orderId != null && keyId != null && razorpayService != null) {
+            Log.d("DocumentUploadScreen", "Starting Razorpay: orderId=$orderId, amount=$amount")
+
+            razorpayService.startPayment(
+                razorpayOrderId = orderId,
+                amount = amount,
+                keyId = keyId,
+                customerPhone = uiState.customerPhone,
+                customerEmail = "",
+                customerName = "Customer",
+                callback = object : RazorpayService.PaymentCallback {
+                    override fun onPaymentSuccess(razorpayPaymentId: String, razorpaySignature: String) {
+                        Log.d("DocumentUploadScreen", "Payment success: $razorpayPaymentId")
+                        Log.d("DocumentUploadScreen", "Signature: $razorpaySignature")
+
+                        val currentOrderId = uiState.orderId ?: return
+
+                        // Verify payment with signature
+                        paymentViewModel.verifyPayment(
+                            razorpayPaymentId = razorpayPaymentId,
+                            razorpaySignature = razorpaySignature
+                        )
+                    }
+
+                    override fun onPaymentError(errorCode: Int, errorMessage: String) {
+                        Log.e("DocumentUploadScreen", "Payment error: $errorMessage")
+                        paymentViewModel.handlePaymentError(errorCode, errorMessage)
+                    }
+                }
+            )
+        }
+    }
+
+    // Handle payment verification success
+    LaunchedEffect(paymentState.paymentVerified) {
+        if (paymentState.paymentVerified) {
+            Log.d("DocumentUploadScreen", "Payment verified, navigating back")
+
+            // Show success message
+            Toast.makeText(
+                context,
+                "Payment successful! Order placed.",
+                Toast.LENGTH_LONG
+            ).show()
+
+            // Clear states
+            viewModel.clearState()
+            paymentViewModel.resetPaymentState()
+
+            // Navigate back
+            onNavigateBack()
+        }
+    }
+
+    // Handle payment errors
+    LaunchedEffect(paymentState.error) {
+        paymentState.error?.let { error ->
+            Log.e("DocumentUploadScreen", "Payment error: $error")
+            Toast.makeText(context, error, Toast.LENGTH_LONG).show()
         }
     }
 
@@ -160,14 +243,12 @@ fun DocumentUploadScreen(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     if (uiState.documents.isEmpty()) {
-                        // Initial file selection
                         FileSelectionPrompt(
                             onSelectFiles = {
                                 multipleFilePickerLauncher.launch("*/*")
                             }
                         )
                     } else {
-                        // Show current file type and add more option
                         CurrentFileTypeHeader(
                             fileType = uiState.currentFileType!!,
                             documentCount = uiState.documents.size,
@@ -182,7 +263,6 @@ fun DocumentUploadScreen(
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        // Documents List
                         DocumentsList(
                             documents = uiState.documents,
                             onRemoveDocument = viewModel::removeDocument,
@@ -194,9 +274,7 @@ fun DocumentUploadScreen(
                 }
             }
 
-            // In DocumentUploadScreen.kt - Update the Total Price Display section
-
-// Total Price Display - only show for PDF files
+            // Total Price Display - only for PDF files
             if (uiState.documents.isNotEmpty() && uiState.currentFileType == FileType.PDF) {
                 Card(
                     colors = CardDefaults.cardColors(
@@ -231,7 +309,7 @@ fun DocumentUploadScreen(
                     }
                 }
             } else if (uiState.documents.isNotEmpty()) {
-                // For non-PDF files, show info card instead of price
+                // For non-PDF files
                 Card(
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
@@ -269,68 +347,30 @@ fun DocumentUploadScreen(
                     }
                 }
             }
-                // In DocumentUploadScreen.kt - Replace the Action Buttons section
 
-// Action Buttons
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    if (uiState.currentFileType == FileType.PDF) {
-                        // PDF files - show payment options
-                        Button(
-                            onClick = {
-                                viewModel.submitOrderWithPayment { orderId ->
-                                    onNavigateToPayment(orderId, uiState.totalCalculatedPrice, uiState.customerPhone)
-                                }
-                            },
-                            enabled = !uiState.isUploading && uiState.documents.isNotEmpty(),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(56.dp)
-                        ) {
-                            if (uiState.isUploading) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(24.dp),
-                                    color = MaterialTheme.colorScheme.onPrimary,
-                                    strokeWidth = 2.dp
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Uploading... ${(uiState.uploadProgress * 100).toInt()}%")
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Default.Upload,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Upload & Pay Now", fontSize = 16.sp)
+            // Action Buttons
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (uiState.currentFileType == FileType.PDF) {
+                    // PDF files - Upload & Pay
+                    Button(
+                        onClick = {
+                            viewModel.submitOrderWithPayment { orderId ->
+                                Log.d("DocumentUploadScreen", "Order created: $orderId")
+                                // Initiate payment
+                                paymentViewModel.initiatePayment(orderId)
                             }
-                        }
-
-                        OutlinedButton(
-                            onClick = viewModel::submitOrderWithoutPayment,
-                            enabled = !uiState.isUploading,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(48.dp)
-                        ) {
-                            Text("Upload Without Payment")
-                        }
-                    } else {
-                        // Non-PDF files - only upload option (no payment)
-                        Button(
-                            onClick = {
-                                viewModel.submitOrderDirectly {
-                                    // Navigate back to home after successful upload
-                                    onNavigateBack()
-                                }
-                            },
-                            enabled = !uiState.isUploading && uiState.documents.isNotEmpty(),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(56.dp)
-                        ) {
-                            if (uiState.isUploading) {
+                        },
+                        enabled = !uiState.isUploading &&
+                                !paymentState.isProcessing &&
+                                uiState.documents.isNotEmpty(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                    ) {
+                        when {
+                            uiState.isUploading -> {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(24.dp),
                                     color = MaterialTheme.colorScheme.onPrimary,
@@ -338,31 +378,91 @@ fun DocumentUploadScreen(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text("Uploading... ${(uiState.uploadProgress * 100).toInt()}%")
-                            } else {
+                            }
+                            paymentState.isProcessing -> {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Processing Payment...")
+                            }
+                            else -> {
                                 Icon(
                                     imageVector = Icons.Default.Upload,
                                     contentDescription = null,
                                     modifier = Modifier.size(20.dp)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Upload Documents", fontSize = 16.sp)
+                                Text(
+                                    "Upload & Pay ₹${String.format("%.2f", uiState.totalCalculatedPrice)}",
+                                    fontSize = 16.sp
+                                )
                             }
                         }
                     }
-                }
 
+                    OutlinedButton(
+                        onClick = viewModel::submitOrderWithoutPayment,
+                        enabled = !uiState.isUploading && !paymentState.isProcessing,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                    ) {
+                        Text("Upload Without Payment")
+                    }
+                } else {
+                    // Non-PDF files - Only upload
+                    Button(
+                        onClick = {
+                            viewModel.submitOrderDirectly {
+                                Toast.makeText(
+                                    context,
+                                    "Documents uploaded successfully!",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                                onNavigateBack()
+                            }
+                        },
+                        enabled = !uiState.isUploading && uiState.documents.isNotEmpty(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                    ) {
+                        if (uiState.isUploading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Uploading... ${(uiState.uploadProgress * 100).toInt()}%")
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Upload,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Upload Documents", fontSize = 16.sp)
+                        }
+                    }
                 }
             }
 
             // Error display
             AnimatedVisibility(
-                visible = uiState.error != null,
+                visible = uiState.error != null || paymentState.error != null,
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
-                uiState.error?.let { error ->
+                val errorMessage = uiState.error ?: paymentState.error
+                errorMessage?.let { error ->
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer
+                        ),
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 16.dp)
@@ -386,6 +486,8 @@ fun DocumentUploadScreen(
                     }
                 }
             }
+        }
+    }
 }
 
 @Composable

@@ -1,62 +1,103 @@
-// Replace the entire RazorpayService.kt
-
 package com.humblecoders.stationary.data.service
 
 import android.app.Activity
+import android.util.Log
 import com.razorpay.Checkout
+import com.razorpay.PaymentData
+import com.razorpay.PaymentResultWithDataListener
 import org.json.JSONObject
 
-class RazorpayService {
-    private val razorpayKeyId = "rzp_test_rjEoTLxTkiviFI" // Replace with actual key
+class RazorpayService(
+    private val activity: Activity
+) : PaymentResultWithDataListener {
 
-    fun initiatePayment(
-        activity: Activity,
-        amount: Double,
-        orderId: String,
-        customerPhone: String
-    ) {
-        val checkout = Checkout()
+    private var paymentCallback: PaymentCallback? = null
 
-        // Preload for better performance
+    interface PaymentCallback {
+        fun onPaymentSuccess(razorpayPaymentId: String, razorpaySignature: String)
+        fun onPaymentError(errorCode: Int, errorMessage: String)
+    }
+
+    init {
         Checkout.preload(activity.applicationContext)
+    }
 
-        // Set the key dynamically
-        checkout.setKeyID(razorpayKeyId)
+    fun startPayment(
+        razorpayOrderId: String,
+        amount: Double,
+        keyId: String,
+        customerName: String = "Customer",
+        customerEmail: String = "",
+        customerPhone: String = "",
+        callback: PaymentCallback
+    ) {
+        this.paymentCallback = callback
 
-        val options = JSONObject().apply {
-            put("name", "Print Shop")
-            put("description", "Document Printing")
-            put("currency", "INR")
-            put("amount", (amount * 100).toInt()) // Convert to paise
+        try {
+            val checkout = Checkout()
+            checkout.setKeyID(keyId)
 
-            // Prefill customer details
-            put("prefill", JSONObject().apply {
-                put("contact", customerPhone)
-            })
+            val options = JSONObject()
+            options.put("name", "Print Shop")
+            options.put("description", "Print Order Payment")
+            options.put("image", "")
+            options.put("order_id", razorpayOrderId)
+            options.put("currency", "INR")
+            options.put("amount", (amount * 100).toInt())
 
-            // Enable payment methods
-            put("method", JSONObject().apply {
-                put("upi", true)
-                put("card", true)
-                put("netbanking", true)
-                put("wallet", true)
-            })
+            val prefill = JSONObject()
+            prefill.put("name", customerName)
+            prefill.put("email", customerEmail)
+            prefill.put("contact", customerPhone)
+            options.put("prefill", prefill)
 
-            // Theme customization
-            put("theme", JSONObject().apply {
-                put("color", "#1976D2")
-            })
+            val theme = JSONObject()
+            theme.put("color", "#3F51B5")
+            options.put("theme", theme)
 
-            // Additional notes (optional)
-            put("notes", JSONObject().apply {
-                put("order_id", orderId)
-            })
+            Log.d("RazorpayService", "Starting payment with options: $options")
+
+            checkout.open(activity, options)
+        } catch (e: Exception) {
+            Log.e("RazorpayService", "Error starting payment", e)
+            paymentCallback?.onPaymentError(
+                0,
+                "Failed to start payment: ${e.message}"
+            )
+        }
+    }
+
+    override fun onPaymentSuccess(razorpayPaymentId: String?, paymentData: PaymentData?) {
+        Log.d("RazorpayService", "Payment successful: $razorpayPaymentId")
+
+        if (razorpayPaymentId == null || paymentData == null) {
+            paymentCallback?.onPaymentError(0, "Payment data is null")
+            return
         }
 
         try {
-            checkout.open(activity, options)
+            val data = paymentData.data as Map<*, *>
+            val signature = data["razorpay_signature"]?.toString() ?: ""
+
+            Log.d("RazorpayService", "Payment signature: $signature")
+
+            paymentCallback?.onPaymentSuccess(razorpayPaymentId, signature)
         } catch (e: Exception) {
-            throw Exception("Failed to open Razorpay: ${e.message}")
+            Log.e("RazorpayService", "Error parsing payment data", e)
+            paymentCallback?.onPaymentError(0, "Error processing payment: ${e.message}")
         }
+    }
+
+    override fun onPaymentError(errorCode: Int, errorMessage: String?, paymentData: PaymentData?) {
+        Log.e("RazorpayService", "Payment error: $errorCode - $errorMessage")
+
+        paymentData?.let { data ->
+            Log.e("RazorpayService", "Error data: ${data.data}")
+        }
+
+        paymentCallback?.onPaymentError(
+            errorCode,
+            errorMessage ?: "Payment failed"
+        )
     }
 }

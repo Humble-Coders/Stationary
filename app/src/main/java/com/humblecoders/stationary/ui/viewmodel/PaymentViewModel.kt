@@ -1,14 +1,9 @@
 package com.humblecoders.stationary.ui.viewmodel
 
-
-
-import android.app.Activity
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.humblecoders.stationary.data.model.PaymentTransactionData
-import com.humblecoders.stationary.data.repository.PrintOrderRepository
-import com.humblecoders.stationary.data.service.RazorpayService
-import com.razorpay.PaymentData
+import com.humblecoders.stationary.data.repository.CloudFunctionsRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -16,129 +11,151 @@ import kotlinx.coroutines.launch
 
 data class PaymentUiState(
     val isProcessing: Boolean = false,
-    val isSuccess: Boolean = false,
+    val razorpayOrderId: String? = null,
+    val razorpayKeyId: String? = null,
+    val amount: Double = 0.0,
+    val amountInPaise: Int = 0,
     val error: String? = null,
-    val orderId: String? = null
+    val paymentSuccess: Boolean = false,
+    val paymentVerified: Boolean = false
 )
 
-class PaymentViewModel(
-    private val printOrderRepository: PrintOrderRepository,
-    private val razorpayService: RazorpayService
-) : ViewModel() {
+class PaymentViewModel : ViewModel() {
+    private val cloudFunctionsRepository = CloudFunctionsRepository()
 
     private val _uiState = MutableStateFlow(PaymentUiState())
     val uiState: StateFlow<PaymentUiState> = _uiState.asStateFlow()
-    private val _currentPaymentInfo = MutableStateFlow<PaymentInfo?>(null)
-    val currentPaymentInfo: StateFlow<PaymentInfo?> = _currentPaymentInfo.asStateFlow()
 
-    fun setPaymentInfo(orderId: String, amount: Double, customerPhone: String) {
-        _currentPaymentInfo.value = PaymentInfo(orderId, amount, customerPhone)
-    }
+    private var currentOrderId: String? = null
 
-    // Update the clearState method
-    fun clearState() {
-        _uiState.value = PaymentUiState()
-        _currentPaymentInfo.value = null
-        currentPaymentAmount = 0.0
-    }
+    fun initiatePayment(orderId: String) {
+        currentOrderId = orderId
 
-
-
-    private fun validatePaymentInputs(orderId: String, amount: Double, customerPhone: String): String? {
-        return when {
-            orderId.isEmpty() -> "Invalid order ID"
-            amount <= 0 -> "Invalid amount"
-            else -> null
-        }
-    }
-
-
-
-
-    // Update these methods in PaymentViewModel.kt
-
-
-    fun handlePaymentError(errorCode: Int, errorMessage: String) {
-        _uiState.value = _uiState.value.copy(
-            isProcessing = false,
-            error = "Payment failed (Code: $errorCode): $errorMessage"
-        )
-    }
-
-    // Add these properties to store payment details
-    private var currentPaymentAmount: Double = 0.0
-
-    fun processPayment(
-        activity: Activity,
-        orderId: String,
-        amount: Double,
-        customerPhone: String
-    ) {
-        val validationError = validatePaymentInputs(orderId, amount, customerPhone)
-        if (validationError != null) {
-            _uiState.value = _uiState.value.copy(error = validationError)
-            return
-        }
-
-        try {
-            _uiState.value = _uiState.value.copy(
-                isProcessing = true,
-                error = null,
-                orderId = orderId
-            )
-
-            // Store the amount for later use
-            currentPaymentAmount = amount
-
-            razorpayService.initiatePayment(
-                activity = activity,
-                amount = amount,
-                orderId = orderId,
-                customerPhone = customerPhone.ifEmpty { "0000000000" } // Use default if empty
-            )
-
-        } catch (e: Exception) {
-            _uiState.value = _uiState.value.copy(
-                isProcessing = false,
-                error = "Failed to start payment: ${e.message}"
-            )
-        }
-    }
-    // Update handlePaymentSuccess to use stored amount
-    fun handlePaymentSuccess(razorpayPaymentId: String, razorpayPaymentData: PaymentData) {
         viewModelScope.launch {
             try {
-                val currentOrderId = _uiState.value.orderId ?: return@launch
-
-                val paymentDataObj = PaymentTransactionData(
-                    razorpayOrderId = "",
-                    razorpayPaymentId = razorpayPaymentId,
-                    amount = currentPaymentAmount
-                )
-
-                printOrderRepository.updateOrderPayment(currentOrderId, paymentDataObj)
-
                 _uiState.value = _uiState.value.copy(
-                    isProcessing = false,
-                    isSuccess = true
+                    isProcessing = true,
+                    error = null
                 )
 
-                kotlinx.coroutines.delay(1500)
-                clearState()
+                Log.d("PaymentViewModel", "Initiating payment for order: $orderId")
 
+                val result = cloudFunctionsRepository.initiatePayment(orderId)
+
+                result.fold(
+                    onSuccess = { response ->
+                        Log.d("PaymentViewModel", "Payment initiated: ${response.razorpayOrderId}")
+                        _uiState.value = _uiState.value.copy(
+                            isProcessing = false,
+                            razorpayOrderId = response.razorpayOrderId,
+                            razorpayKeyId = response.keyId,
+                            amount = response.amount,
+                            amountInPaise = response.amountInPaise
+                        )
+                    },
+                    onFailure = { exception ->
+                        Log.e("PaymentViewModel", "Failed to initiate payment", exception)
+                        _uiState.value = _uiState.value.copy(
+                            isProcessing = false,
+                            error = "Failed to initiate payment: ${exception.message}"
+                        )
+                    }
+                )
             } catch (e: Exception) {
+                Log.e("PaymentViewModel", "Error initiating payment", e)
                 _uiState.value = _uiState.value.copy(
                     isProcessing = false,
-                    error = "Payment verification failed: ${e.message}"
+                    error = "Error: ${e.message}"
                 )
             }
         }
     }
 
-}
+    fun verifyPayment(
+        razorpayPaymentId: String,
+        razorpaySignature: String
+    ) {
+        val orderId = currentOrderId ?: run {
+            _uiState.value = _uiState.value.copy(
+                error = "Order ID not found"
+            )
+            return
+        }
 
-data class PaymentInfo(
-    val orderId: String,
-    val amount: Double,
-    val customerPhone: String
-)
+        val razorpayOrderId = _uiState.value.razorpayOrderId ?: run {
+            _uiState.value = _uiState.value.copy(
+                error = "Razorpay Order ID not found"
+            )
+            return
+        }
+
+        viewModelScope.launch {
+            try {
+                _uiState.value = _uiState.value.copy(
+                    isProcessing = true,
+                    error = null
+                )
+
+                Log.d("PaymentViewModel", "Verifying payment: $razorpayPaymentId")
+
+                // Note: Razorpay signature needs to be calculated from order_id|payment_id
+                // For now, we'll fetch it from Razorpay API on backend
+                val calculatedSignature = razorpaySignature.ifEmpty {
+                    // Backend will fetch and verify
+                    ""
+                }
+
+                val result = cloudFunctionsRepository.verifyPayment(
+                    razorpayOrderId = razorpayOrderId,
+                    razorpayPaymentId = razorpayPaymentId,
+                    razorpaySignature = calculatedSignature,
+                    orderId = orderId
+                )
+
+                result.fold(
+                    onSuccess = { response ->
+                        Log.d("PaymentViewModel", "Payment verified: ${response.status}")
+                        if (response.success && response.status == "PAID") {
+                            _uiState.value = _uiState.value.copy(
+                                isProcessing = false,
+                                paymentSuccess = true,
+                                paymentVerified = true
+                            )
+                        } else {
+                            _uiState.value = _uiState.value.copy(
+                                isProcessing = false,
+                                error = response.message
+                            )
+                        }
+                    },
+                    onFailure = { exception ->
+                        Log.e("PaymentViewModel", "Payment verification failed", exception)
+                        _uiState.value = _uiState.value.copy(
+                            isProcessing = false,
+                            error = "Verification failed: ${exception.message}"
+                        )
+                    }
+                )
+            } catch (e: Exception) {
+                Log.e("PaymentViewModel", "Error verifying payment", e)
+                _uiState.value = _uiState.value.copy(
+                    isProcessing = false,
+                    error = "Error: ${e.message}"
+                )
+            }
+        }
+    }
+
+    fun handlePaymentError(errorCode: Int, errorMessage: String) {
+        Log.e("PaymentViewModel", "Payment error: $errorCode - $errorMessage")
+        _uiState.value = _uiState.value.copy(
+            isProcessing = false,
+            error = "Payment failed: $errorMessage"
+        )
+    }
+
+    fun resetPaymentState() {
+        _uiState.value = PaymentUiState()
+        currentOrderId = null
+    }
+}
