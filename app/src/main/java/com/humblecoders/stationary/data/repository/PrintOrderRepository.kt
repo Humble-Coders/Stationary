@@ -105,8 +105,13 @@ class PrintOrderRepository(firestore: FirebaseFirestore, storage: FirebaseStorag
         val bwPageCount = parsePageRangeCount(settings.customBWPages)
         val colorPageCount = parsePageRangeCount(settings.customColorPages)
 
-        val bwCost = bwPageCount * shopSettings.pricePerPage.bw
-        val colorCost = colorPageCount * shopSettings.pricePerPage.color
+        val bwPrice = shopSettings.pricePerPage.bw
+        val colorPrice = shopSettings.pricePerPage.color
+        
+        android.util.Log.d("PrintOrderRepository", "Calculating price - BW: $bwPageCount pages @ ₹$bwPrice, Color: $colorPageCount pages @ ₹$colorPrice, Copies: ${settings.copies}")
+
+        val bwCost = bwPageCount * bwPrice
+        val colorCost = colorPageCount * colorPrice
 
         return (bwCost + colorCost) * settings.copies
     }

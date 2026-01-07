@@ -700,6 +700,8 @@ class DocumentUploadViewModel(
         viewModelScope.launch {
             try {
                 shopSettingsRepository.observeShopSettings().collect { settings ->
+                    Log.d("DocumentUploadVM", "Shop settings received: shopOpen=${settings.shopOpen}")
+                    Log.d("DocumentUploadVM", "Pricing - BW: ${settings.pricePerPage.bw}, Color: ${settings.pricePerPage.color}")
                     currentShopSettings = settings
                     _uiState.value = _uiState.value.copy(isShopOpen = settings.shopOpen)
 
@@ -708,6 +710,7 @@ class DocumentUploadViewModel(
                     }
                 }
             } catch (e: Exception) {
+                Log.e("DocumentUploadVM", "Error observing shop settings", e)
                 _uiState.value = _uiState.value.copy(error = e.message)
             }
         }
