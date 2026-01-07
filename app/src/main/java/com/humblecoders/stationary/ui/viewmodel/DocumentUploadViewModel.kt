@@ -582,7 +582,6 @@ class DocumentUploadViewModel(
                     individualDocumentsArray.add(docData)
                 }
 
-                val totalSize = documents.sumOf { it.fileSize }
                 val totalPages = documents.sumOf { it.getEffectivePageCount() }
 
                 val order = PrintOrder(
@@ -590,15 +589,13 @@ class DocumentUploadViewModel(
                     customerPhone = _uiState.value.customerPhone,
                     documentName = documentNames, // Array of names
                     documentUrl = documentUrls, // Array of URLs
-                    documentSize = totalSize,
                     fileType = _uiState.value.currentFileType?.extension ?: ".pdf",
                     pageCount = totalPages,
                     printSettings = printSettingsArray, // Array of settings maps
                     individualDocuments = individualDocumentsArray, // Array of document maps
                     documentCount = documents.size, // Document count
                     hasSettings = true,
-                    isPaid = false,
-                    canAutoPrint = _uiState.value.currentFileType == FileType.PDF
+                    isPaid = false
                 )
 
                 val orderId = printOrderRepository.createOrder(order)
@@ -697,7 +694,6 @@ class DocumentUploadViewModel(
                     individualDocumentsArray.add(docData)
                 }
 
-                val totalSize = documents.sumOf { it.fileSize }
                 val totalPages = documents.sumOf { it.getEffectivePageCount() }
 
                 val order = PrintOrder(
@@ -705,7 +701,6 @@ class DocumentUploadViewModel(
                     customerPhone = _uiState.value.customerPhone,
                     documentName = documentNames,
                     documentUrl = documentUrls,
-                    documentSize = totalSize,
                     fileType = _uiState.value.currentFileType?.extension ?: ".jpg",
                     pageCount = totalPages,
                     printSettings = printSettingsArray,
@@ -713,7 +708,6 @@ class DocumentUploadViewModel(
                     documentCount = documents.size,
                     hasSettings = true,
                     isPaid = true, // Mark as paid for non-PDF files
-                    canAutoPrint = true, // Allow auto-print for non-PDF files
                     paymentStatus = com.humblecoders.stationary.data.model.PaymentStatus.PAID // Set as paid
                 )
 

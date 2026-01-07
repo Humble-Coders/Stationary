@@ -123,6 +123,7 @@ fun DocumentUploadScreen(
         if (orderId != null && keyId != null && razorpayService != null) {
             Log.d("DocumentUploadScreen", "Starting Razorpay: orderId=$orderId, amount=$amount")
 
+            // Just start payment - MainActivity will handle callbacks
             razorpayService.startPayment(
                 razorpayOrderId = orderId,
                 amount = amount,
@@ -131,22 +132,13 @@ fun DocumentUploadScreen(
                 customerEmail = "",
                 customerName = "Customer",
                 callback = object : RazorpayService.PaymentCallback {
+                    // Empty callbacks - MainActivity handles everything
                     override fun onPaymentSuccess(razorpayPaymentId: String, razorpaySignature: String) {
-                        Log.d("DocumentUploadScreen", "Payment success: $razorpayPaymentId")
-                        Log.d("DocumentUploadScreen", "Signature: $razorpaySignature")
-
-                        val currentOrderId = uiState.orderId ?: return
-
-                        // Verify payment with signature
-                        paymentViewModel.verifyPayment(
-                            razorpayPaymentId = razorpayPaymentId,
-                            razorpaySignature = razorpaySignature
-                        )
+                        Log.d("DocumentUploadScreen", "Callback received but handled by MainActivity")
                     }
 
                     override fun onPaymentError(errorCode: Int, errorMessage: String) {
-                        Log.e("DocumentUploadScreen", "Payment error: $errorMessage")
-                        paymentViewModel.handlePaymentError(errorCode, errorMessage)
+                        Log.d("DocumentUploadScreen", "Error callback received but handled by MainActivity")
                     }
                 }
             )

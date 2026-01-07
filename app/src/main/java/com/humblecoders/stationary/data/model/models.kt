@@ -36,7 +36,6 @@ data class PrintOrder(
     val customerPhone: String = "",
     val documentName: List<String> = emptyList(), // Changed to List<String>
     val documentUrl: List<String> = emptyList(), // Changed to List<String>
-    val documentSize: Long = 0, // Total size of all documents
     val fileType: String = "PDF",
     val pageCount: Int = 0, // Total pages across all documents
     val printSettings: List<Map<String, Any>> = emptyList(), // Changed to List<Map<String, Any>>
@@ -53,14 +52,6 @@ data class PrintOrder(
 
     @PropertyName("isPaid")
     val isPaid: Boolean = false,
-
-    @PropertyName("canAutoPrint")
-    val canAutoPrint: Boolean = false,
-
-    val queuePriority: Int = 0,
-
-    @PropertyName("isInQueue")
-    val inQueue: Boolean = false,
 
     val createdAt: Timestamp = Timestamp.now(),
     val updatedAt: Timestamp = Timestamp.now()

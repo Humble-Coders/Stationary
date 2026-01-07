@@ -42,7 +42,6 @@ class PrintOrderRepository(firestore: FirebaseFirestore, storage: FirebaseStorag
             "customerPhone" to customerPhone,
             "documentName" to documentName, // Now array
             "documentUrl" to documentUrl, // Now array
-            "documentSize" to documentSize,
             "pageCount" to pageCount,
             "printSettings" to printSettings, // Now array of maps
             "individualDocuments" to individualDocuments, // Now array of maps
@@ -54,8 +53,6 @@ class PrintOrderRepository(firestore: FirebaseFirestore, storage: FirebaseStorag
             "orderStatus" to orderStatus,
             "hasSettings" to hasSettings,
             "isPaid" to isPaid,
-            "canAutoPrint" to canAutoPrint,
-            "queuePriority" to queuePriority,
             "createdAt" to createdAt,
             "updatedAt" to updatedAt,
             "fileType" to fileType
@@ -77,7 +74,6 @@ class PrintOrderRepository(firestore: FirebaseFirestore, storage: FirebaseStorag
             "razorpayOrderId" to paymentData.razorpayOrderId,
             "razorpayPaymentId" to paymentData.razorpayPaymentId,
             "paymentAmount" to paymentData.amount,
-            "canAutoPrint" to true,
             "updatedAt" to com.google.firebase.Timestamp.now()
         )
 

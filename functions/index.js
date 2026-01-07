@@ -181,7 +181,6 @@ exports.createOrder = onCall(async (request) => {
       customerPhone: payload.customerPhone || "",
       documentName: payload.documents.map((d) => d.fileName),
       documentUrl: payload.documents.map((d) => d.url),
-      documentSize: payload.documents.reduce((sum, d) => sum + d.fileSize, 0),
       fileType: payload.documents[0].fileType,
       pageCount: payload.documents.reduce((sum, d) => sum + d.pageCount, 0),
       printSettings: payload.documents.map((d) => d.printSettings),
@@ -192,9 +191,6 @@ exports.createOrder = onCall(async (request) => {
       orderStatus: "SUBMITTED",
       hasSettings: true,
       isPaid: false,
-      canAutoPrint: false,
-      queuePriority: 0,
-      inQueue: false,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     };
@@ -401,7 +397,6 @@ exports.verifyPayment = onCall(async (request) => {
       await db.collection("print_orders").doc(orderId).update({
         paymentStatus: "PAID",
         isPaid: true,
-        canAutoPrint: true,
         razorpayPaymentId: razorpayPaymentId,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });

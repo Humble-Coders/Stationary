@@ -76,19 +76,57 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
             Log.d("MainActivity", "Payment data: ${data.data}")
 
             try {
-                val dataJson = JSONObject(data.data as Map<*, *>)
+                // paymentData.data is already a JSONObject, not a Map
+                val dataJson = when (val paymentDataObj = data.data) {
+                    is JSONObject -> paymentDataObj
+                    is String -> JSONObject(paymentDataObj)
+                    else -> {
+                        Log.e("MainActivity", "Unexpected data type: ${paymentDataObj?.javaClass}")
+                        throw ClassCastException("Unexpected payment data type")
+                    }
+                }
 
-                Log.d("MainActivity", "Order ID: ${dataJson.optString("razorpay_order_id")}")
-                Log.d("MainActivity", "Payment ID: ${dataJson.optString("razorpay_payment_id")}")
-                Log.d("MainActivity", "Signature: ${dataJson.optString("razorpay_signature")}")
+                val razorpayOrderId = dataJson.optString("razorpay_order_id")
+                val razorpayPaymentIdFromData = dataJson.optString("razorpay_payment_id")
+                val razorpaySignature = dataJson.optString("razorpay_signature")
+
+                Log.d("MainActivity", "Order ID: $razorpayOrderId")
+                Log.d("MainActivity", "Payment ID: $razorpayPaymentIdFromData")
+                Log.d("MainActivity", "Signature: $razorpaySignature")
+
+                // Use the payment ID from data if available, otherwise use the parameter
+                val finalPaymentId = razorpayPaymentIdFromData.ifEmpty {
+                    razorpayPaymentId ?: ""
+                }
+
+                if (finalPaymentId.isNotEmpty() && razorpaySignature.isNotEmpty()) {
+                    // Call verification directly on paymentViewModel
+                    paymentViewModel.verifyPayment(
+                        razorpayPaymentId = finalPaymentId,
+                        razorpaySignature = razorpaySignature
+                    )
+                } else {
+                    Log.e("MainActivity", "Missing payment ID or signature")
+                    paymentViewModel.handlePaymentError(
+                        0,
+                        "Payment data incomplete"
+                    )
+                }
 
             } catch (e: Exception) {
                 Log.e("MainActivity", "JSON error", e)
+                paymentViewModel.handlePaymentError(
+                    0,
+                    "Error processing payment data: ${e.message}"
+                )
             }
-
+        } ?: run {
+            Log.e("MainActivity", "Payment data is null")
+            paymentViewModel.handlePaymentError(
+                0,
+                "Payment data not received"
+            )
         }
-
-        // RazorpayService callback will handle the actual processing
     }
 
     override fun onPaymentError(errorCode: Int, errorMessage: String?, paymentData: PaymentData?) {
@@ -98,7 +136,11 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
             Log.e("MainActivity", "Error data: ${data.data}")
         }
 
-        // RazorpayService callback will handle the error
+        // Call error handler directly on paymentViewModel
+        paymentViewModel.handlePaymentError(
+            errorCode,
+            errorMessage ?: "Payment failed"
+        )
     }
 
     private fun initializeFirebase() {
