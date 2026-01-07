@@ -151,11 +151,6 @@ fun OrderCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    OrderDetail(
-                        label = "Pages",
-                        value = "${order.pageCount} ${if (order.pageCount != 1) "pages" else "page"}"
-                    )
-
                     Spacer(modifier = Modifier.height(4.dp))
 
                     OrderDetail(
@@ -204,7 +199,7 @@ fun OrderCard(
 
             // Action indicators
             val isPaid = getPaymentStatusDisplay(order) == "Paid"
-            val hasSettings = order.printSettings != null || order.individualDocuments.isNotEmpty()
+            val hasSettings = order.individualDocuments.isNotEmpty()
 
             if (!isPaid || !hasSettings) {
                 Spacer(modifier = Modifier.height(16.dp))
@@ -429,11 +424,10 @@ fun ShopClosedCard(
 private fun getDocumentCount(order: PrintOrder): Int {
     return order.documentCount.takeIf { it > 0 } ?: run {
         // Fallback for older orders without documentCount field
-        when {
-            order.documentName.isNotEmpty() -> order.documentName.size
-            order.documentUrl.isNotEmpty() -> order.documentUrl.size
-            order.individualDocuments.isNotEmpty() -> order.individualDocuments.size
-            else -> 1
+        if (order.individualDocuments.isNotEmpty()) {
+            order.individualDocuments.size
+        } else {
+            1
         }
     }
 }
@@ -450,12 +444,17 @@ private fun getFileTypeFromExtension(extension: String): String {
     }
 }
 
-// Update getDisplayDocumentName function to handle PPTX:
+// Get display document name from individualDocuments
 private fun getDisplayDocumentName(order: PrintOrder): String {
     return when {
-        order.documentName.size == 1 -> order.documentName.first()
-        order.documentName.size > 1 -> "${order.documentCount} ${getFileTypeFromExtension(order.fileType)} files"
-        else -> order.documentName.firstOrNull() ?: "Unknown document"
+        order.individualDocuments.isEmpty() -> "Unknown document"
+        order.individualDocuments.size == 1 -> {
+            val fileName = order.individualDocuments.first()["fileName"] as? String
+            fileName ?: "Unknown document"
+        }
+        else -> {
+            "${order.documentCount} ${getFileTypeFromExtension(order.fileType)} files"
+        }
     }
 }
 
@@ -464,38 +463,30 @@ private fun getDisplayDocumentName(order: PrintOrder): String {
 private fun getPrintSettingsDisplay(order: PrintOrder): String {
     return try {
         when {
-            order.printSettings.isNotEmpty() -> {
-                if (order.printSettings.size == 1) {
-                    val settings = order.printSettings.first()
-                    val customBWPages = settings["customBWPages"] as? String ?: ""
-                    val customColorPages = settings["customColorPages"] as? String ?: ""
-                    val copies = (settings["copies"] as? Number)?.toInt() ?: 1
+            order.individualDocuments.isEmpty() -> "Not configured"
+            order.individualDocuments.size == 1 -> {
+                val doc = order.individualDocuments.first()
+                val printSettings = doc["printSettings"] as? Map<*, *> ?: return "Not configured"
+                val customBWPages = printSettings["customBWPages"] as? String ?: ""
+                val customColorPages = printSettings["customColorPages"] as? String ?: ""
+                val copies = (printSettings["copies"] as? Number)?.toInt() ?: 1
 
-                    when {
-                        customBWPages.isNotEmpty() && customColorPages.isNotEmpty() -> {
-                            "Mixed (B&W: $customBWPages, Color: $customColorPages) • $copies ${if (copies > 1) "copies" else "copy"}"
-                        }
-                        customBWPages.isNotEmpty() -> {
-                            "B&W pages: $customBWPages • $copies ${if (copies > 1) "copies" else "copy"}"
-                        }
-                        customColorPages.isNotEmpty() -> {
-                            "Color pages: $customColorPages • $copies ${if (copies > 1) "copies" else "copy"}"
-                        }
-                        else -> {
-                            // Fallback to traditional color mode display
-                            val colorMode = settings["colorMode"] as? String ?: "BW"
-                            val colorModeDisplay = if (colorMode == "COLOR") "Color" else "Black & White"
-                            "$colorModeDisplay • $copies ${if (copies > 1) "copies" else "copy"}"
-                        }
+                when {
+                    customBWPages.isNotEmpty() && customColorPages.isNotEmpty() -> {
+                        "Mixed (B&W: $customBWPages, Color: $customColorPages) • $copies ${if (copies > 1) "copies" else "copy"}"
                     }
-                } else {
-                    "Individual settings (${order.printSettings.size} docs)"
+                    customBWPages.isNotEmpty() -> {
+                        "B&W pages: $customBWPages • $copies ${if (copies > 1) "copies" else "copy"}"
+                    }
+                    customColorPages.isNotEmpty() -> {
+                        "Color pages: $customColorPages • $copies ${if (copies > 1) "copies" else "copy"}"
+                    }
+                    else -> "Not configured"
                 }
             }
-            order.individualDocuments.isNotEmpty() -> {
-                "Individual settings"
+            else -> {
+                "Individual settings (${order.individualDocuments.size} docs)"
             }
-            else -> "Not configured"
         }
     } catch (e: Exception) {
         Log.w("OrderCard", "Error parsing print settings: ${e.message}")

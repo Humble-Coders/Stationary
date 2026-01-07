@@ -40,10 +40,7 @@ class PrintOrderRepository(firestore: FirebaseFirestore, storage: FirebaseStorag
             "orderId" to orderId,
             "customerId" to customerId,
             "customerPhone" to customerPhone,
-            "documentName" to documentName, // Now array
-            "documentUrl" to documentUrl, // Now array
-            "pageCount" to pageCount,
-            "printSettings" to printSettings, // Now array of maps
+            "shopId" to shopId,
             "individualDocuments" to individualDocuments, // Now array of maps
             "documentCount" to documentCount, // NEW FIELD
             "paymentStatus" to paymentStatus,
@@ -51,8 +48,6 @@ class PrintOrderRepository(firestore: FirebaseFirestore, storage: FirebaseStorag
             "razorpayOrderId" to razorpayOrderId,
             "razorpayPaymentId" to razorpayPaymentId,
             "orderStatus" to orderStatus,
-            "hasSettings" to hasSettings,
-            "isPaid" to isPaid,
             "createdAt" to createdAt,
             "updatedAt" to updatedAt,
             "fileType" to fileType
@@ -70,7 +65,6 @@ class PrintOrderRepository(firestore: FirebaseFirestore, storage: FirebaseStorag
     suspend fun updateOrderPayment(orderId: String, paymentData: PaymentTransactionData) {
         val updates = mapOf(
             "paymentStatus" to PaymentStatus.PAID,
-            "isPaid" to true,
             "razorpayOrderId" to paymentData.razorpayOrderId,
             "razorpayPaymentId" to paymentData.razorpayPaymentId,
             "paymentAmount" to paymentData.amount,
@@ -103,30 +97,56 @@ class PrintOrderRepository(firestore: FirebaseFirestore, storage: FirebaseStorag
     }
 
 
-    fun calculatePrice(settings: PrintSettings, pageCount: Int, shopSettings: ShopSettings, fileType: FileType? = null): Double {
-        return when (fileType) {
-            FileType.DOCX, FileType.PPTX, FileType.IMAGE -> { // Add FileType.IMAGE here
-                // DOCX, PPTX and IMAGE files are treated as single unit
-                val pricePerPage = when (settings.colorMode) {
-                    ColorMode.COLOR -> shopSettings.pricePerPage.color
-                    ColorMode.BW -> shopSettings.pricePerPage.bw
-                }
-                pricePerPage * settings.copies
-            }
-            FileType.PDF, null -> {
-                calculatePdfPrice(settings, pageCount, shopSettings)
-            }
-        }
-    }
+    /**
+     * Calculate price using only customBWPages and customColorPages ranges
+     * Parses the ranges and counts pages, then multiplies by price and copies
+     */
+    fun calculatePrice(settings: PrintSettings, shopSettings: ShopSettings): Double {
+        val bwPageCount = parsePageRangeCount(settings.customBWPages)
+        val colorPageCount = parsePageRangeCount(settings.customColorPages)
 
-    private fun calculatePdfPrice(settings: PrintSettings, totalPages: Int, shopSettings: ShopSettings): Double {
-        val bwPages = settings.getEffectiveBWPages(totalPages)
-        val colorPages = settings.getEffectiveColorPages(totalPages)
-
-        val bwCost = bwPages.size * shopSettings.pricePerPage.bw
-        val colorCost = colorPages.size * shopSettings.pricePerPage.color
+        val bwCost = bwPageCount * shopSettings.pricePerPage.bw
+        val colorCost = colorPageCount * shopSettings.pricePerPage.color
 
         return (bwCost + colorCost) * settings.copies
+    }
+
+    /**
+     * Parse page range string and return count of pages
+     * Supports formats: "1,2,3" or "1-5" or "1,2,5-10"
+     */
+    private fun parsePageRangeCount(pageRange: String): Int {
+        if (pageRange.isEmpty()) return 0
+
+        try {
+            val pages = mutableSetOf<Int>()
+            val parts = pageRange.split(",")
+
+            for (part in parts) {
+                val trimmed = part.trim()
+                if (trimmed.contains("-")) {
+                    val range = trimmed.split("-")
+                    if (range.size == 2) {
+                        val start = range[0].trim().toInt().coerceAtLeast(1)
+                        val end = range[1].trim().toInt().coerceAtLeast(1)
+                        if (start <= end) {
+                            for (i in start..end) {
+                                pages.add(i)
+                            }
+                        }
+                    }
+                } else {
+                    val page = trimmed.toInt()
+                    if (page >= 1) {
+                        pages.add(page)
+                    }
+                }
+            }
+
+            return pages.size
+        } catch (e: Exception) {
+            return 0
+        }
     }
 
 }

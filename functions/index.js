@@ -41,16 +41,62 @@ function generateOrderId() {
 }
 
 /**
+ * Parse page range string and return count of pages
+ * Supports formats: "1,2,3" or "1-5" or "1,2,5-10"
+ * @param {string} pageRange - Page range string
+ * @return {number} Count of pages
+ */
+function parsePageRangeCount(pageRange) {
+  if (!pageRange || pageRange.trim() === "") {
+    return 0;
+  }
+
+  try {
+    const pages = new Set();
+    const parts = pageRange.split(",");
+
+    for (const part of parts) {
+      const trimmed = part.trim();
+      if (trimmed.includes("-")) {
+        const range = trimmed.split("-");
+        if (range.length === 2) {
+          const start = Math.max(1, parseInt(range[0].trim(), 10));
+          const end = Math.max(1, parseInt(range[1].trim(), 10));
+          if (start <= end) {
+            for (let i = start; i <= end; i++) {
+              pages.add(i);
+            }
+          }
+        }
+      } else {
+        const page = parseInt(trimmed, 10);
+        if (page >= 1) {
+          pages.add(page);
+        }
+      }
+    }
+
+    return pages.size;
+  } catch (e) {
+    console.error("Error parsing page range:", pageRange, e);
+    return 0;
+  }
+}
+
+/**
  * Calculate order price (server-side validation)
- * @param {Array} documents - Array of document objects
- * @param {Object} shopSettings - Shop settings object
+ * Uses only customBWPages and customColorPages from individualDocuments array
+ * @param {Array} documents - Array of document objects with printSettings
+ * @param {Object} shopSettings - Shop settings object with pricing
  * @return {number} Calculated price
  */
 function calculateOrderPrice(documents, shopSettings) {
   let totalPrice = 0;
 
-  console.log("Shop settings received:", shopSettings);
+  console.log("=== CALCULATE ORDER PRICE ===");
+  console.log("Shop settings received:", JSON.stringify(shopSettings));
   console.log("Shop settings keys:", Object.keys(shopSettings || {}));
+  console.log("Documents count:", documents ? documents.length : 0);
 
   if (!shopSettings || !shopSettings.pricing) {
     console.error("shopSettings.pricing is undefined");
@@ -58,55 +104,62 @@ function calculateOrderPrice(documents, shopSettings) {
   }
 
   const pricing = shopSettings.pricing;
-  console.log("Pricing object:", pricing);
+  console.log("Pricing object:", JSON.stringify(pricing));
+  console.log("BW price:", pricing.bw, "Color price:", pricing.color);
 
-  documents.forEach((doc) => {
+  if (!documents || !Array.isArray(documents) || documents.length === 0) {
+    console.error("Documents array is empty or invalid");
+    throw new Error("Documents array is required");
+  }
+
+  documents.forEach((doc, index) => {
+    console.log(`\n--- Processing document ${index + 1} ---`);
+    console.log("Document:", JSON.stringify(doc));
+
+    if (!doc.printSettings) {
+      console.error(`Document ${index + 1} missing printSettings`);
+      throw new Error(`Document ${index + 1} missing printSettings`);
+    }
+
     const settings = doc.printSettings;
-    const pageCount = doc.pageCount;
     const copies = settings.copies || 1;
 
-    let bwPages = 0;
-    let colorPages = 0;
+    console.log("Print settings:", JSON.stringify(settings));
+    console.log("Copies:", copies);
 
-    if (settings.pagesToPrint === "ALL") {
-      if (settings.colorMode === "BW") {
-        bwPages = pageCount;
-      } else if (settings.colorMode === "COLOR") {
-        colorPages = pageCount;
-      } else if (settings.colorMode === "MIXED") {
-        bwPages = settings.customBWPages ? settings.customBWPages.length : 0;
-        colorPages = settings.customColorPages ?
-            settings.customColorPages.length : 0;
-      }
-    } else if (settings.pagesToPrint === "CUSTOM") {
-      const customPages = settings.customPages ?
-          settings.customPages.length : 0;
-      if (settings.colorMode === "BW") {
-        bwPages = customPages;
-      } else if (settings.colorMode === "COLOR") {
-        colorPages = customPages;
-      } else if (settings.colorMode === "MIXED") {
-        bwPages = settings.customBWPages ? settings.customBWPages.length : 0;
-        colorPages = settings.customColorPages ?
-            settings.customColorPages.length : 0;
-      }
-    }
+    // Parse page ranges
+    const customBWPages = settings.customBWPages || "";
+    const customColorPages = settings.customColorPages || "";
+
+    console.log("customBWPages string:", customBWPages);
+    console.log("customColorPages string:", customColorPages);
+
+    const bwPageCount = parsePageRangeCount(customBWPages);
+    const colorPageCount = parsePageRangeCount(customColorPages);
+
+    console.log("BW pages count:", bwPageCount);
+    console.log("Color pages count:", colorPageCount);
 
     const bwPrice = pricing.bw || 0;
     const colorPrice = pricing.color || 0;
 
-    console.log("Document pricing - BW:", bwPrice, "Color:", colorPrice);
-    console.log(
-        "Pages - BW:", bwPages,
-        "Color:", colorPages,
-        "Copies:", copies,
-    );
+    const bwCost = bwPageCount * bwPrice;
+    const colorCost = colorPageCount * colorPrice;
 
-    const docPrice = (bwPages * bwPrice + colorPages * colorPrice) * copies;
+    console.log("BW cost:", bwCost, "(pages:", bwPageCount,
+        "x price:", bwPrice, ")");
+    console.log("Color cost:", colorCost, "(pages:", colorPageCount,
+        "x price:", colorPrice, ")");
+
+    const docPrice = (bwCost + colorCost) * copies;
+    console.log("Document price:", docPrice, "(before copies:",
+        bwCost + colorCost, "x copies:", copies, ")");
+
     totalPrice += docPrice;
   });
 
-  console.log("Total calculated price:", totalPrice);
+  console.log("\n=== TOTAL CALCULATED PRICE ===");
+  console.log("Total price:", totalPrice);
   return totalPrice;
 }
 
@@ -175,25 +228,35 @@ exports.createOrder = onCall(async (request) => {
 
     const orderId = generateOrderId();
 
+    // Build individualDocuments array with simplified structure
+    const individualDocuments = payload.documents.map((doc) => {
+      return {
+        fileName: doc.fileName,
+        fileType: doc.fileType,
+        printSettings: {
+          customBWPages: doc.printSettings.customBWPages || "",
+          customColorPages: doc.printSettings.customColorPages || "",
+          copies: doc.printSettings.copies || 1,
+        },
+      };
+    });
+
     const orderData = {
       orderId: orderId,
       customerId: userId,
       customerPhone: payload.customerPhone || "",
-      documentName: payload.documents.map((d) => d.fileName),
-      documentUrl: payload.documents.map((d) => d.url),
+      shopId: payload.shopId || "",
       fileType: payload.documents[0].fileType,
-      pageCount: payload.documents.reduce((sum, d) => sum + d.pageCount, 0),
-      printSettings: payload.documents.map((d) => d.printSettings),
-      individualDocuments: payload.documents,
+      individualDocuments: individualDocuments,
       documentCount: payload.documents.length,
       paymentStatus: "UNPAID",
       paymentAmount: calculatedPrice,
       orderStatus: "SUBMITTED",
-      hasSettings: true,
-      isPaid: false,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     };
+
+    console.log("Order data to be saved:", JSON.stringify(orderData));
 
     await db.collection("print_orders").doc(orderId).set(orderData);
 
@@ -242,7 +305,7 @@ exports.initiatePayment = onCall(async (request) => {
       throw new Error("Unauthorized access to order");
     }
 
-    if (order.isPaid || order.paymentStatus === "PAID") {
+    if (order.paymentStatus === "PAID") {
       throw new Error("Order is already paid");
     }
 
@@ -396,7 +459,6 @@ exports.verifyPayment = onCall(async (request) => {
     if (payment.status === "captured") {
       await db.collection("print_orders").doc(orderId).update({
         paymentStatus: "PAID",
-        isPaid: true,
         razorpayPaymentId: razorpayPaymentId,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
@@ -453,7 +515,6 @@ exports.checkOrderStatus = onCall(async (request) => {
         orderId: order.orderId,
         paymentStatus: order.paymentStatus,
         orderStatus: order.orderStatus,
-        isPaid: order.isPaid,
         amount: order.paymentAmount,
       },
     };

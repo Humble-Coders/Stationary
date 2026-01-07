@@ -13,6 +13,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.humblecoders.stationary.data.model.DocumentItem
 import com.humblecoders.stationary.data.model.FileType
 import com.humblecoders.stationary.data.model.PageSelection
+import com.humblecoders.stationary.data.model.PaymentStatus
 import com.humblecoders.stationary.data.model.PrintOrder
 import com.humblecoders.stationary.data.model.PrintSettings
 import com.humblecoders.stationary.data.model.ShopSettings
@@ -39,6 +40,7 @@ data class DocumentUploadUiState(
     val orderId: String? = null,
     val customerId: String = "",
     val customerPhone: String = "",
+    val shopId: String = "",
     val canAddMoreFiles: Boolean = true
 )
 
@@ -78,6 +80,11 @@ class DocumentUploadViewModel(
             customerId = customerId,
             customerPhone = customerPhone
         )
+    }
+
+    fun setShopId(shopId: String) {
+        Log.d("DocumentUploadVM", "Setting shop ID: $shopId")
+        _uiState.value = _uiState.value.copy(shopId = shopId)
     }
 
     fun submitOrderWithPayment(onOrderCreated: (String) -> Unit) {
@@ -131,7 +138,8 @@ class DocumentUploadViewModel(
                 val createOrderResult = cloudFunctionsRepo.createOrder(
                     documents = uploadedDocuments,
                     totalAmount = _uiState.value.totalCalculatedPrice,
-                    customerPhone = _uiState.value.customerPhone
+                    customerPhone = _uiState.value.customerPhone,
+                    shopId = _uiState.value.shopId
                 )
 
                 createOrderResult.fold(
@@ -416,9 +424,7 @@ class DocumentUploadViewModel(
             if (doc.id == documentId) {
                 val price = printOrderRepository.calculatePrice(
                     doc.printSettings,
-                    doc.getEffectivePageCount(),
-                    currentShopSettings,
-                    doc.fileType
+                    currentShopSettings
                 )
                 doc.copy(calculatedPrice = price)
             } else doc
@@ -432,9 +438,7 @@ class DocumentUploadViewModel(
         val totalPrice = _uiState.value.documents.sumOf { doc ->
             printOrderRepository.calculatePrice(
                 doc.printSettings,
-                doc.getEffectivePageCount(),
-                currentShopSettings,
-                doc.fileType
+                currentShopSettings
             )
         }
 
@@ -442,9 +446,7 @@ class DocumentUploadViewModel(
         val updatedDocuments = _uiState.value.documents.map { doc ->
             val price = printOrderRepository.calculatePrice(
                 doc.printSettings,
-                doc.getEffectivePageCount(),
-                currentShopSettings,
-                doc.fileType
+                currentShopSettings
             )
             doc.copy(calculatedPrice = price)
         }
@@ -541,9 +543,6 @@ class DocumentUploadViewModel(
                 _uiState.value = _uiState.value.copy(isUploading = true, error = null)
 
                 // Upload all documents
-                val documentUrls = mutableListOf<String>()
-                val documentNames = mutableListOf<String>()
-                val printSettingsArray = mutableListOf<Map<String, Any>>()
                 val individualDocumentsArray = mutableListOf<Map<String, Any>>()
                 val documents = _uiState.value.documents
 
@@ -552,50 +551,33 @@ class DocumentUploadViewModel(
                         uploadProgress = (index.toFloat() / documents.size)
                     )
 
-                    val documentUrl = printOrderRepository.uploadDocument(document.uri!!)
-                    documentUrls.add(documentUrl)
-                    documentNames.add(document.fileName)
+                    // Upload document (URL stored in individualDocuments if needed later)
+                    printOrderRepository.uploadDocument(document.uri!!)
 
-                    // Convert PrintSettings to Map
-                    val settingsMap = mapOf(
-                        "colorMode" to document.printSettings.colorMode.name,
-                        "pagesToPrint" to document.printSettings.pagesToPrint.name,
-                        "customPages" to document.printSettings.customPages,
+                    // Simplified printSettings - only customBWPages, customColorPages, and copies
+                    val printSettingsMap = mapOf(
                         "customBWPages" to document.printSettings.customBWPages,
                         "customColorPages" to document.printSettings.customColorPages,
-                        "copies" to document.printSettings.copies,
-                        "paperSize" to document.printSettings.paperSize.name,
-                        "orientation" to document.printSettings.orientation.name,
-                        "quality" to document.printSettings.quality.name
+                        "copies" to document.printSettings.copies
                     )
-                    printSettingsArray.add(settingsMap)
 
-                    // Individual document data
+                    // Individual document data - only fileName, fileType, and printSettings
                     val docData = mapOf(
                         "fileName" to document.fileName,
-                        "fileSize" to document.fileSize,
                         "fileType" to document.fileType.extension,
-                        "pageCount" to document.getEffectivePageCount(),
-                        "printSettings" to settingsMap,
-                        "calculatedPrice" to document.calculatedPrice
+                        "printSettings" to printSettingsMap
                     )
                     individualDocumentsArray.add(docData)
                 }
 
-                val totalPages = documents.sumOf { it.getEffectivePageCount() }
-
                 val order = PrintOrder(
                     customerId = _uiState.value.customerId,
                     customerPhone = _uiState.value.customerPhone,
-                    documentName = documentNames, // Array of names
-                    documentUrl = documentUrls, // Array of URLs
+                    shopId = _uiState.value.shopId,
                     fileType = _uiState.value.currentFileType?.extension ?: ".pdf",
-                    pageCount = totalPages,
-                    printSettings = printSettingsArray, // Array of settings maps
                     individualDocuments = individualDocumentsArray, // Array of document maps
                     documentCount = documents.size, // Document count
-                    hasSettings = true,
-                    isPaid = false
+                    paymentStatus = PaymentStatus.UNPAID
                 )
 
                 val orderId = printOrderRepository.createOrder(order)
@@ -625,7 +607,8 @@ class DocumentUploadViewModel(
         _uiState.value = DocumentUploadUiState().copy(
             isShopOpen = _uiState.value.isShopOpen,
             customerId = _uiState.value.customerId,
-            customerPhone = _uiState.value.customerPhone
+            customerPhone = _uiState.value.customerPhone,
+            shopId = _uiState.value.shopId
         )
     }
 // In DocumentUploadViewModel.kt - Add this new method
@@ -653,9 +636,6 @@ class DocumentUploadViewModel(
                 _uiState.value = _uiState.value.copy(isUploading = true, error = null)
 
                 // Upload all documents
-                val documentUrls = mutableListOf<String>()
-                val documentNames = mutableListOf<String>()
-                val printSettingsArray = mutableListOf<Map<String, Any>>()
                 val individualDocumentsArray = mutableListOf<Map<String, Any>>()
                 val documents = _uiState.value.documents
 
@@ -664,50 +644,32 @@ class DocumentUploadViewModel(
                         uploadProgress = (index.toFloat() / documents.size)
                     )
 
-                    val documentUrl = printOrderRepository.uploadDocument(document.uri!!)
-                    documentUrls.add(documentUrl)
-                    documentNames.add(document.fileName)
+                    // Upload document (URL stored in individualDocuments if needed later)
+                    printOrderRepository.uploadDocument(document.uri!!)
 
-                    // Convert PrintSettings to Map
-                    val settingsMap = mapOf(
-                        "colorMode" to document.printSettings.colorMode.name,
-                        "pagesToPrint" to document.printSettings.pagesToPrint.name,
-                        "customPages" to document.printSettings.customPages,
+                    // Simplified printSettings - only customBWPages, customColorPages, and copies
+                    val printSettingsMap = mapOf(
                         "customBWPages" to document.printSettings.customBWPages,
                         "customColorPages" to document.printSettings.customColorPages,
-                        "copies" to document.printSettings.copies,
-                        "paperSize" to document.printSettings.paperSize.name,
-                        "orientation" to document.printSettings.orientation.name,
-                        "quality" to document.printSettings.quality.name
+                        "copies" to document.printSettings.copies
                     )
-                    printSettingsArray.add(settingsMap)
 
-                    // Individual document data
+                    // Individual document data - only fileName, fileType, and printSettings
                     val docData = mapOf(
                         "fileName" to document.fileName,
-                        "fileSize" to document.fileSize,
                         "fileType" to document.fileType.extension,
-                        "pageCount" to document.getEffectivePageCount(),
-                        "printSettings" to settingsMap,
-                        "calculatedPrice" to document.calculatedPrice
+                        "printSettings" to printSettingsMap
                     )
                     individualDocumentsArray.add(docData)
                 }
 
-                val totalPages = documents.sumOf { it.getEffectivePageCount() }
-
                 val order = PrintOrder(
                     customerId = _uiState.value.customerId,
                     customerPhone = _uiState.value.customerPhone,
-                    documentName = documentNames,
-                    documentUrl = documentUrls,
+                    shopId = _uiState.value.shopId,
                     fileType = _uiState.value.currentFileType?.extension ?: ".jpg",
-                    pageCount = totalPages,
-                    printSettings = printSettingsArray,
                     individualDocuments = individualDocumentsArray,
                     documentCount = documents.size,
-                    hasSettings = true,
-                    isPaid = true, // Mark as paid for non-PDF files
                     paymentStatus = com.humblecoders.stationary.data.model.PaymentStatus.PAID // Set as paid
                 )
 

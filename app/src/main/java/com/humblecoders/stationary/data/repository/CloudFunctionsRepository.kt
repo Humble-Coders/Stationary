@@ -34,7 +34,8 @@ class CloudFunctionsRepository {
     suspend fun createOrder(
         documents: List<DocumentItem>,
         totalAmount: Double,
-        customerPhone: String
+        customerPhone: String,
+        shopId: String
     ): Result<CreateOrderResponse> {
         return try {
             val currentUser = auth.currentUser
@@ -45,24 +46,17 @@ class CloudFunctionsRepository {
             val documentsData = ArrayList<HashMap<String, Any>>()
 
             documents.forEach { doc ->
+                // Simplified printSettings - only customBWPages, customColorPages, and copies
                 val printSettingsMap = hashMapOf<String, Any>(
-                    "colorMode" to doc.printSettings.colorMode.name,
-                    "pagesToPrint" to doc.printSettings.pagesToPrint.name,
-                    "customPages" to doc.printSettings.customPages,
                     "customBWPages" to doc.printSettings.customBWPages,
                     "customColorPages" to doc.printSettings.customColorPages,
-                    "copies" to doc.printSettings.copies,
-                    "paperSize" to doc.printSettings.paperSize.name,
-                    "orientation" to doc.printSettings.orientation.name,
-                    "quality" to doc.printSettings.quality.name
+                    "copies" to doc.printSettings.copies
                 )
 
+                // Individual document data - only fileName, fileType, and printSettings
                 val docMap = hashMapOf<String, Any>(
                     "fileName" to doc.fileName,
-                    "url" to (doc.uri?.toString() ?: ""),
-                    "fileSize" to doc.fileSize,
                     "fileType" to doc.fileType.extension,
-                    "pageCount" to doc.getEffectivePageCount(),
                     "printSettings" to printSettingsMap
                 )
 
@@ -73,7 +67,8 @@ class CloudFunctionsRepository {
                 "customerId" to currentUser.uid,
                 "documents" to documentsData,
                 "totalAmount" to totalAmount,
-                "customerPhone" to customerPhone
+                "customerPhone" to customerPhone,
+                "shopId" to shopId
             )
 
             Log.d("CloudFunctions", "Calling createOrder...")

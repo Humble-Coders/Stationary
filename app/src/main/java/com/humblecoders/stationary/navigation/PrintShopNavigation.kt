@@ -7,8 +7,10 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.navArgument
 import com.google.firebase.auth.FirebaseAuth
 import com.humblecoders.stationary.ui.screen.*
 import com.humblecoders.stationary.ui.screen.auth.LoginScreen
@@ -24,7 +26,9 @@ sealed class Screen(val route: String) {
     object Register : Screen("register")
     object Profile : Screen("profile")
     object Home : Screen("home")
-    object DocumentUpload : Screen("document_upload")
+    object DocumentUpload : Screen("document_upload/{shopId}") {
+        fun createRoute(shopId: String) = "document_upload/$shopId"
+    }
     object OrderHistory : Screen("order_history")
 }
 
@@ -92,8 +96,8 @@ fun PrintShopNavigation(
 
             HomeScreen(
                 homeViewModel = homeViewModel,
-                onNavigateToUpload = {
-                    navController.navigate(Screen.DocumentUpload.route)
+                onNavigateToUpload = { shopId ->
+                    navController.navigate(Screen.DocumentUpload.createRoute(shopId))
                 },
                 onNavigateToOrderHistory = {
                     navController.navigate(Screen.OrderHistory.route)
@@ -104,11 +108,20 @@ fun PrintShopNavigation(
             )
         }
 
-        composable(Screen.DocumentUpload.route) {
+        composable(
+            route = Screen.DocumentUpload.route,
+            arguments = listOf(
+                navArgument("shopId") {
+                    type = NavType.StringType
+                }
+            )
+        ) { backStackEntry ->
+            val shopId = backStackEntry.arguments?.getString("shopId") ?: ""
             DocumentUploadScreen(
                 viewModel = documentUploadViewModel,
                 paymentViewModel = paymentViewModel,
                 activity = activity as ComponentActivity,
+                shopId = shopId,
                 onNavigateBack = {
                     navController.popBackStack()
                 }

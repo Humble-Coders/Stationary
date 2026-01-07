@@ -34,11 +34,8 @@ data class PrintOrder(
     val orderId: String = "",
     val customerId: String = "",
     val customerPhone: String = "",
-    val documentName: List<String> = emptyList(), // Changed to List<String>
-    val documentUrl: List<String> = emptyList(), // Changed to List<String>
+    val shopId: String = "", // GBLOCK or COS
     val fileType: String = "PDF",
-    val pageCount: Int = 0, // Total pages across all documents
-    val printSettings: List<Map<String, Any>> = emptyList(), // Changed to List<Map<String, Any>>
     val individualDocuments: List<Map<String, Any>> = emptyList(), // Changed to List<Map<String, Any>>
     val documentCount: Int = 0, // NEW FIELD - number of documents
     val paymentStatus: PaymentStatus = PaymentStatus.UNPAID,
@@ -47,18 +44,9 @@ data class PrintOrder(
     val razorpayPaymentId: String = "",
     val orderStatus: OrderStatus = OrderStatus.SUBMITTED,
 
-    @PropertyName("hasSettings")
-    val hasSettings: Boolean = false,
-
-    @PropertyName("isPaid")
-    val isPaid: Boolean = false,
-
     val createdAt: Timestamp = Timestamp.now(),
     val updatedAt: Timestamp = Timestamp.now()
-) {
-    @PropertyName("isPaid")
-    fun getIsPaid(): Boolean = isPaid
-}
+)
 
 // Rest of the existing models remain the same...
 
@@ -71,6 +59,7 @@ data class ShopSettings(
     @PropertyName("autoPrintEnabled")
     val autoPrintEnabled: Boolean = false,
 
+    @PropertyName("pricing")
     val pricePerPage: PricePerPage = PricePerPage()
 ) {
     constructor() : this(
@@ -213,4 +202,9 @@ enum class FileType(val displayName: String, val extension: String) {
     PPTX("PowerPoint Presentation", ".pptx"), // Add this line
     IMAGE("Image", ".jpg") // Add this line
 
+}
+
+enum class ShopId(val displayName: String) {
+    GBLOCK("GBlock"),
+    COS("Cos")
 }

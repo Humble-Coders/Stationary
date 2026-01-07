@@ -35,6 +35,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.humblecoders.stationary.data.model.PrintOrder
+import com.humblecoders.stationary.data.model.ShopId
 import com.humblecoders.stationary.ui.component.OrderCard
 import com.humblecoders.stationary.ui.component.ShopClosedCard
 import com.humblecoders.stationary.ui.viewmodel.HomeViewModel
@@ -44,7 +45,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun HomeScreen(
     homeViewModel: HomeViewModel,
-    onNavigateToUpload: () -> Unit,
+    onNavigateToUpload: (String) -> Unit, // Now takes shopId parameter
     onNavigateToOrderHistory : () -> Unit,
     onNavigateToProfile: () -> Unit
 
@@ -122,15 +123,6 @@ fun HomeScreen(
                                 Icon(Icons.Outlined.History, contentDescription = "Order History")
                             }
 
-                            // Upload FAB
-                            SmallFloatingActionButton(
-                                onClick = {
-                                    expanded = false
-                                    onNavigateToUpload()
-                                }
-                            ) {
-                                Icon(Icons.Default.Upload, contentDescription = "Upload Document")
-                            }
                         }
                     }
 
@@ -226,6 +218,17 @@ fun HomeScreen(
                             hasCompletedOrders = homeUiState.orders.isNotEmpty() // Show if there are any orders (even completed ones)
                         )
                     } else {
+                        // Show stationary selection when shop is open
+                        if (homeUiState.isShopOpen) {
+                            StationarySelectionCard(
+                                onSelectStationary = { shopId: String ->
+                                    onNavigateToUpload(shopId)
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 16.dp)
+                            )
+                        }
                         OrdersListSection(
                             orders = activeOrders, // Use filtered orders
                             onOrderClick = { /* Handle order click */ },
@@ -274,7 +277,7 @@ fun HomeScreen(
 @Composable
 private fun EmptyOrdersPlaceholder(
     isShopOpen: Boolean,
-    onNavigateToUpload: () -> Unit,
+    onNavigateToUpload: (String) -> Unit,
     hasCompletedOrders: Boolean = false
 ) {
     Box(
@@ -317,14 +320,12 @@ private fun EmptyOrdersPlaceholder(
             if (isShopOpen) {
                 Spacer(modifier = Modifier.height(24.dp))
 
-                Button(
-                    onClick = onNavigateToUpload,
+                StationarySelectionCard(
+                    onSelectStationary = { shopId: String ->
+                        onNavigateToUpload(shopId)
+                    },
                     modifier = Modifier.padding(horizontal = 24.dp)
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Upload Document")
-                }
+                )
             }
         }
     }
@@ -371,6 +372,60 @@ private fun OrdersListSection(
                     getPaymentStatusDisplay = viewModel::getPaymentStatusDisplay,
                     getOrderStatusDisplay = viewModel::getOrderStatusDisplay,
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun StationarySelectionCard(
+    onSelectStationary: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "Select Stationary",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // GBlock Button
+                Button(
+                    onClick = { onSelectStationary(ShopId.GBLOCK.name) },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    Text(ShopId.GBLOCK.displayName)
+                }
+
+                // Cos Button
+                Button(
+                    onClick = { onSelectStationary(ShopId.COS.name) },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.secondary
+                    )
+                ) {
+                    Text(ShopId.COS.displayName)
+                }
             }
         }
     }

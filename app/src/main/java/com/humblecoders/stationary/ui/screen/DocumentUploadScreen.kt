@@ -95,8 +95,14 @@ fun DocumentUploadScreen(
     viewModel: DocumentUploadViewModel,
     paymentViewModel: PaymentViewModel,
     activity: ComponentActivity,
+    shopId: String,
     onNavigateBack: () -> Unit
 ) {
+    // Set shopId when screen is loaded
+    LaunchedEffect(shopId) {
+        viewModel.setShopId(shopId)
+    }
+    
     val uiState by viewModel.uiState.collectAsState()
     val paymentState by paymentViewModel.uiState.collectAsState()
     val context = LocalContext.current
