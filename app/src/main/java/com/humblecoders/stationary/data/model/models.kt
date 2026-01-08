@@ -81,7 +81,8 @@ data class PrintSettings(
     val copies: Int = 1,
     val paperSize: PaperSize = PaperSize.A4,
     val orientation: Orientation = Orientation.PORTRAIT,
-    val quality: Quality = Quality.NORMAL
+    val quality: Quality = Quality.NORMAL,
+    val printOnBothSides: Boolean = false
 ) {
     // Helper function to get effective pages for black and white
     fun getEffectiveBWPages(totalPages: Int): List<Int> {

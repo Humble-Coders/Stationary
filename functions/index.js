@@ -233,10 +233,12 @@ exports.createOrder = onCall(async (request) => {
       return {
         fileName: doc.fileName,
         fileType: doc.fileType,
+        fileUrl: doc.fileUrl || "",
         printSettings: {
           customBWPages: doc.printSettings.customBWPages || "",
           customColorPages: doc.printSettings.customColorPages || "",
           copies: doc.printSettings.copies || 1,
+          printOnBothSides: doc.printSettings.printOnBothSides || false,
         },
       };
     });

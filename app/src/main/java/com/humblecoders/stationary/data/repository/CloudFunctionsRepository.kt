@@ -46,17 +46,19 @@ class CloudFunctionsRepository {
             val documentsData = ArrayList<HashMap<String, Any>>()
 
             documents.forEach { doc ->
-                // Simplified printSettings - only customBWPages, customColorPages, and copies
+                // Simplified printSettings - only customBWPages, customColorPages, copies, and printOnBothSides
                 val printSettingsMap = hashMapOf<String, Any>(
                     "customBWPages" to doc.printSettings.customBWPages,
                     "customColorPages" to doc.printSettings.customColorPages,
-                    "copies" to doc.printSettings.copies
+                    "copies" to doc.printSettings.copies,
+                    "printOnBothSides" to doc.printSettings.printOnBothSides
                 )
 
-                // Individual document data - only fileName, fileType, and printSettings
+                // Individual document data - fileName, fileType, fileUrl, and printSettings
                 val docMap = hashMapOf<String, Any>(
                     "fileName" to doc.fileName,
                     "fileType" to doc.fileType.extension,
+                    "fileUrl" to (doc.uri?.toString() ?: ""),
                     "printSettings" to printSettingsMap
                 )
 
