@@ -17,6 +17,7 @@ import com.humblecoders.stationary.data.model.PaymentStatus
 import com.humblecoders.stationary.data.model.PrintOrder
 import com.humblecoders.stationary.data.model.PrintSettings
 import com.humblecoders.stationary.data.model.ShopSettings
+import com.humblecoders.stationary.data.model.PricePerPage
 import com.humblecoders.stationary.data.repository.CloudFunctionsRepository
 import com.humblecoders.stationary.data.repository.PrintOrderRepository
 import com.humblecoders.stationary.data.repository.ShopSettingsRepository
@@ -41,7 +42,8 @@ data class DocumentUploadUiState(
     val customerId: String = "",
     val customerPhone: String = "",
     val shopId: String = "",
-    val canAddMoreFiles: Boolean = true
+    val canAddMoreFiles: Boolean = true,
+    val pricePerPage: PricePerPage = PricePerPage() // Add prices from Firestore
 )
 
 class DocumentUploadViewModel(
@@ -58,20 +60,38 @@ class DocumentUploadViewModel(
         private const val MAX_DOCUMENTS = 10 // Maximum documents per upload
     }
 
-    init {
-        observeShopStatus()
-        initializeUserInfo()
+    // Add auth state listener
+    private val authStateListener = FirebaseAuth.AuthStateListener { auth ->
+        val user = auth.currentUser
+        if (user != null && user.uid != _uiState.value.customerId) {
+            Log.d("DocumentUploadVM", "Auth state changed, new user: ${user.uid}")
+            initializeUserInfo(user.uid, user.phoneNumber ?: "")
+        } else if (user == null) {
+            Log.d("DocumentUploadVM", "User signed out, clearing all user data")
+            clearAllUserData()
+        }
     }
 
-    private fun initializeUserInfo() {
+    init {
+        observeShopStatus()
+        
+        // Add auth state listener
+        FirebaseAuth.getInstance().addAuthStateListener(authStateListener)
+        
+        // Check if user is already signed in
         val currentUser = FirebaseAuth.getInstance().currentUser
         if (currentUser != null) {
-            Log.d("DocumentUploadVM", "Initializing user info: ${currentUser.uid}")
-            _uiState.value = _uiState.value.copy(
-                customerId = currentUser.uid,
-                customerPhone = currentUser.phoneNumber ?: ""
-            )
+            Log.d("DocumentUploadVM", "User already signed in: ${currentUser.uid}")
+            initializeUserInfo(currentUser.uid, currentUser.phoneNumber ?: "")
         }
+    }
+
+    private fun initializeUserInfo(customerId: String, customerPhone: String) {
+        Log.d("DocumentUploadVM", "Initializing user info: $customerId, phone: $customerPhone")
+        _uiState.value = _uiState.value.copy(
+            customerId = customerId,
+            customerPhone = customerPhone
+        )
     }
 
     fun setCustomerInfo(customerId: String, customerPhone: String) {
@@ -101,6 +121,12 @@ class DocumentUploadViewModel(
 
         if (_uiState.value.documents.isEmpty()) {
             _uiState.value = _uiState.value.copy(error = "Please select at least one document")
+            return
+        }
+
+        // Check if payment amount is zero for PDF files
+        if (_uiState.value.totalCalculatedPrice <= 0 && _uiState.value.currentFileType == FileType.PDF) {
+            _uiState.value = _uiState.value.copy(error = "Please select pages to print")
             return
         }
 
@@ -156,9 +182,10 @@ class DocumentUploadViewModel(
                         onOrderCreated(response.orderId)
                     },
                     onFailure = { e ->
+                        Log.e("DocumentUploadVM", "Cloud function error: ${e.message}", e)
                         _uiState.value = _uiState.value.copy(
                             isUploading = false,
-                            error = "Failed to create order: ${e.message}",
+                            error = "An error occurred",
                             uploadProgress = 0f
                         )
                     }
@@ -479,9 +506,26 @@ class DocumentUploadViewModel(
     }
 
     fun updateDocumentSettings(documentId: String, settings: PrintSettings) {
+        val document = _uiState.value.documents.find { it.id == documentId }
+        if (document == null) return
+
+        val maxPages = document.getEffectivePageCount()
+        
+        // Validate and sanitize page ranges to ensure no page exceeds maxPages
+        val sanitizedSettings = if (document.fileType == FileType.PDF && maxPages > 0) {
+            val sanitizedBWPages = sanitizePageRange(settings.customBWPages, maxPages)
+            val sanitizedColorPages = sanitizePageRange(settings.customColorPages, maxPages)
+            settings.copy(
+                customBWPages = sanitizedBWPages,
+                customColorPages = sanitizedColorPages
+            )
+        } else {
+            settings
+        }
+
         val updatedDocuments = _uiState.value.documents.map { doc ->
             if (doc.id == documentId) {
-                doc.copy(printSettings = settings)
+                doc.copy(printSettings = sanitizedSettings)
             } else doc
         }
 
@@ -698,12 +742,34 @@ class DocumentUploadViewModel(
     }
 
     fun clearState() {
+        Log.d("DocumentUploadVM", "Clearing all state")
         _uiState.value = DocumentUploadUiState().copy(
             isShopOpen = _uiState.value.isShopOpen,
-            customerId = _uiState.value.customerId,
-            customerPhone = _uiState.value.customerPhone,
-            shopId = _uiState.value.shopId
+            pricePerPage = _uiState.value.pricePerPage
         )
+    }
+    
+    fun clearAllUserData() {
+        Log.d("DocumentUploadVM", "Clearing all user data")
+        _uiState.value = _uiState.value.copy(
+            documents = emptyList(),
+            currentFileType = null,
+            totalCalculatedPrice = 0.0,
+            isUploading = false,
+            uploadProgress = 0f,
+            error = null,
+            orderId = null,
+            customerId = "",
+            customerPhone = "",
+            shopId = "",
+            canAddMoreFiles = true
+        )
+    }
+    
+    override fun onCleared() {
+        super.onCleared()
+        FirebaseAuth.getInstance().removeAuthStateListener(authStateListener)
+        Log.d("DocumentUploadVM", "ViewModel cleared and auth listener removed")
     }
 // In DocumentUploadViewModel.kt - Add this new method
 
@@ -814,19 +880,9 @@ class DocumentUploadViewModel(
                 Log.e("DocumentUploadVM", "Error cause: ${e.cause}")
                 e.printStackTrace()
                 
-                val errorMessage = when {
-                    e.message?.contains("Permission", ignoreCase = true) == true -> {
-                        "Permission denied: ${e.message}. Please check Firebase Storage rules and file access permissions."
-                    }
-                    e.message?.contains("authentication", ignoreCase = true) == true -> {
-                        "Authentication error: ${e.message}. Please sign in again."
-                    }
-                    else -> "Upload failed: ${e.message ?: "Unknown error"}"
-                }
-                
                 _uiState.value = _uiState.value.copy(
                     isUploading = false,
-                    error = errorMessage,
+                    error = "An error occurred",
                     uploadProgress = 0f
                 )
             }
@@ -840,7 +896,10 @@ class DocumentUploadViewModel(
                     Log.d("DocumentUploadVM", "Shop settings received: shopOpen=${settings.shopOpen}")
                     Log.d("DocumentUploadVM", "Pricing - BW: ${settings.pricePerPage.bw}, Color: ${settings.pricePerPage.color}")
                     currentShopSettings = settings
-                    _uiState.value = _uiState.value.copy(isShopOpen = settings.shopOpen)
+                    _uiState.value = _uiState.value.copy(
+                        isShopOpen = settings.shopOpen,
+                        pricePerPage = settings.pricePerPage
+                    )
 
                     if (_uiState.value.documents.isNotEmpty()) {
                         recalculateTotalPrice()
@@ -908,17 +967,121 @@ private fun parsePageRangeToListForDocument(pageRange: String): List<Int> {
         if (trimmed.contains("-")) {
             val range = trimmed.split("-")
             if (range.size == 2) {
-                val start = range[0].trim().toInt()
-                val end = range[1].trim().toInt()
-                for (i in start..end) {
-                    pages.add(i)
+                try {
+                    val start = range[0].trim().toInt()
+                    val end = range[1].trim().toInt()
+                    for (i in start..end) {
+                        pages.add(i)
+                    }
+                } catch (e: Exception) {
+                    // Skip invalid range
                 }
             }
         } else {
-            pages.add(trimmed.toInt())
+            try {
+                pages.add(trimmed.toInt())
+            } catch (e: Exception) {
+                // Skip invalid page number
+            }
         }
     }
 
     return pages.toList()
+}
+
+/**
+ * Sanitizes a page range string by removing any pages that exceed maxPages
+ * Returns a cleaned page range string with only valid pages
+ * Allows partial input during typing (e.g., "1-", "-5", "1,2,") by returning input as-is
+ * Enforces rule: cannot mix ranges and commas - must use either "5-10" OR "1,2,3"
+ */
+private fun sanitizePageRange(pageRange: String, maxPages: Int): String {
+    if (pageRange.isEmpty() || maxPages <= 0) return pageRange
+
+    // Check if input contains both ranges and commas (not allowed)
+    val hasRange = pageRange.contains("-")
+    val hasComma = pageRange.contains(",")
+    
+    // If both are present, return as-is to show error (validation will catch it)
+    if (hasRange && hasComma) {
+        // Check if it's partial input (like "1-," or "1-,2")
+        val parts = pageRange.split(",").map { it.trim() }
+        val hasPartialRange = parts.any { part ->
+            part.contains("-") && (
+                part.endsWith("-") || 
+                part.startsWith("-") ||
+                part.split("-").any { it.trim().isEmpty() }
+            )
+        }
+        // If partial, allow typing to continue
+        if (hasPartialRange || pageRange.trim().endsWith(",")) {
+            return pageRange
+        }
+        // Otherwise, it's invalid - return as-is for validation to catch
+        return pageRange
+    }
+
+    // Check if input contains partial ranges (incomplete during typing)
+    // If so, return as-is to allow typing
+    val hasPartialRange = hasRange && (
+        pageRange.endsWith("-") || 
+        pageRange.startsWith("-") ||
+        pageRange.split(",").any { part ->
+            val trimmed = part.trim()
+            trimmed.contains("-") && (
+                trimmed.endsWith("-") || 
+                trimmed.startsWith("-") ||
+                trimmed.split("-").any { it.trim().isEmpty() }
+            )
+        }
+    )
+    
+    // If there's a trailing comma, it's likely partial input
+    val hasTrailingComma = pageRange.trim().endsWith(",") && pageRange.split(",").last().trim().isEmpty()
+    
+    // If input appears to be partial/incomplete, return as-is
+    if (hasPartialRange || hasTrailingComma) {
+        return pageRange
+    }
+
+    // Otherwise, sanitize complete ranges
+    val validParts = mutableListOf<String>()
+    
+    if (hasRange) {
+        // Single range format - no commas allowed
+        val trimmed = pageRange.trim()
+        val range = trimmed.split("-")
+        if (range.size == 2) {
+            val startStr = range[0].trim()
+            val endStr = range[1].trim()
+            if (startStr.isNotEmpty() && endStr.isNotEmpty()) {
+                val start = startStr.toIntOrNull()?.coerceIn(1, maxPages)
+                val end = endStr.toIntOrNull()?.coerceIn(1, maxPages)
+                if (start != null && end != null && start <= end && start <= maxPages && end <= maxPages) {
+                    return "$start-$end"
+                }
+            }
+        }
+        // Invalid range, return as-is
+        return pageRange
+    } else {
+        // Comma-separated format - no ranges allowed
+        val parts = pageRange.split(",")
+        for (part in parts) {
+            val trimmed = part.trim()
+            if (trimmed.isEmpty()) continue
+
+            try {
+                val page = trimmed.toIntOrNull()?.coerceIn(1, maxPages)
+                if (page != null && page <= maxPages) {
+                    validParts.add(page.toString())
+                }
+            } catch (e: Exception) {
+                // Skip invalid parts
+                continue
+            }
+        }
+        return validParts.joinToString(", ")
+    }
 }
 

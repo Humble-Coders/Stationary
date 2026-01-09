@@ -26,6 +26,9 @@ sealed class Screen(val route: String) {
     object Register : Screen("register")
     object Profile : Screen("profile")
     object Home : Screen("home")
+    
+    object ActiveOrders : Screen("active_orders")
+
     object DocumentUpload : Screen("document_upload/{shopId}") {
         fun createRoute(shopId: String) = "document_upload/$shopId"
     }
@@ -64,6 +67,15 @@ fun PrintShopNavigation(
             )
         }
 
+        composable(Screen.ActiveOrders.route) {
+            ActiveOrdersScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                homeViewModel = homeViewModel
+            )
+        }
+
         composable(Screen.Register.route) {
             RegisterScreen(
                 viewModel = registerViewModel,
@@ -85,7 +97,6 @@ fun PrintShopNavigation(
         }
 
         composable(Screen.Home.route) {
-            // Initialize ViewModels with current user
             LaunchedEffect(Unit) {
                 val currentUser = FirebaseAuth.getInstance().currentUser
                 if (currentUser != null) {
@@ -104,6 +115,9 @@ fun PrintShopNavigation(
                 },
                 onNavigateToProfile = {
                     navController.navigate(Screen.Profile.route)
+                },
+                onNavigateToActiveOrders = {
+                    navController.navigate(Screen.ActiveOrders.route)
                 }
             )
         }

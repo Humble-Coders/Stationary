@@ -65,14 +65,13 @@ class RegisterViewModel(private val repository: FirebaseAuthRepository) : ViewMo
     fun registerWithEmailAndPassword(
         fullName: String,
         email: String,
-        password: String,
-        phone: String = ""
+        password: String
     ) {
         _registerState.value = RegisterState.Loading
 
         viewModelScope.launch {
             val result =
-                repository.createUserWithEmailAndPassword(fullName, email, password, phone)
+                repository.createUserWithEmailAndPassword(fullName, email, password)
 
             result.fold(
                 onSuccess = {
@@ -98,6 +97,11 @@ class RegisterViewModel(private val repository: FirebaseAuthRepository) : ViewMo
     }
 
     fun resetState() {
+        _registerState.value = RegisterState.Idle
+    }
+    
+    fun clearAllState() {
+        Log.d("RegisterViewModel", "Clearing all register state")
         _registerState.value = RegisterState.Idle
     }
 

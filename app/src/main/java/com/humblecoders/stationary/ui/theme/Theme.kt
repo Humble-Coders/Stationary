@@ -51,7 +51,7 @@ fun StationaryTheme(
     content: @Composable () -> Unit
 ) {
     val colorScheme = if (darkTheme) {
-        DarkColorScheme
+        LightColorScheme
     } else {
         LightColorScheme
     }

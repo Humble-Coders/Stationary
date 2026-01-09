@@ -2,8 +2,7 @@ package com.humblecoders.stationary.ui.screen.auth
 
 import android.content.Intent
 import androidx.activity.result.ActivityResultLauncher
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -13,8 +12,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,12 +24,22 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.humblecoders.stationary.ui.viewmodel.auth.RegisterViewModel
 import com.humblecoders.stationary.ui.viewmodel.auth.RegisterState
 import kotlinx.coroutines.delay
+
+// Modern color palette matching the app
+private val BlueBtn = Color(0xFF3B82F6)
+private val BackgroundGray = Color(0xFFF9FAFB)
+private val CardWhite = Color.White
+private val TextPrimary = Color(0xFF111827)
+private val TextSecondary = Color(0xFF6B7280)
+private val BorderGray = Color(0xFFE5E7EB)
+private val ErrorRed = Color(0xFFEF4444)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,13 +56,11 @@ fun RegisterScreen(
     var isConfirmPasswordVisible by remember { mutableStateOf(false) }
     val registerState by viewModel.registerState.collectAsState()
     val focusManager = LocalFocusManager.current
-    var phone by remember { mutableStateOf("") }
 
     var passwordError by remember { mutableStateOf<String?>(null) }
     var confirmPasswordError by remember { mutableStateOf<String?>(null) }
     var emailError by remember { mutableStateOf<String?>(null) }
     var nameError by remember { mutableStateOf<String?>(null) }
-    var phoneError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(registerState) {
         when (registerState) {
@@ -65,46 +71,134 @@ fun RegisterScreen(
                 }
                 viewModel.resetState()
             }
-            else -> {
-            }
+            else -> {}
         }
     }
 
-    Scaffold { padding ->
+    Scaffold(
+        containerColor = BackgroundGray
+    ) { padding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp)
-                .background(MaterialTheme.colorScheme.background)
+                .padding(padding)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
-                    .padding(bottom = 16.dp)
+                    .padding(24.dp)
                     .clickable(
                         indication = null,
                         interactionSource = remember { MutableInteractionSource() }
                     ) {
                         focusManager.clearFocus()
                     },
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                BrandHeader()
-                CreateAccountHeader()
+                Spacer(Modifier.height(20.dp))
 
+                // Brand Header
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = BlueBtn.copy(alpha = 0.1f),
+                    modifier = Modifier.size(100.dp)
+                ) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Print,
+                            contentDescription = "App Logo",
+                            tint = BlueBtn,
+                            modifier = Modifier.size(50.dp)
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                Text(
+                    text = "Print Shop",
+                    fontSize = 32.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+
+                Spacer(Modifier.height(32.dp))
+
+                // Create Account Header
+                Text(
+                    text = "Create Account",
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+
+                Spacer(Modifier.height(8.dp))
+
+                Text(
+                    text = "Please fill in your details to continue",
+                    fontSize = 15.sp,
+                    color = TextSecondary,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(Modifier.height(32.dp))
+
+                // Error Message - Display at top for visibility
+                AnimatedVisibility(
+                    visible = registerState is RegisterState.Error,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = ErrorRed.copy(alpha = 0.1f)
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Error,
+                                contentDescription = null,
+                                tint = ErrorRed,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Text(
+                                text = (registerState as? RegisterState.Error)?.message ?: "",
+                                color = ErrorRed,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+
+                // Full Name Input
                 FullNameInput(
                     fullName = fullName,
                     onFullNameChange = {
                         fullName = it
                         nameError = if (it.isBlank()) "Name is required" else null
                     },
-                    error = nameError
+                    error = nameError,
+                    modifier = Modifier.fillMaxWidth()
                 )
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(Modifier.height(16.dp))
 
+                // Email Input
                 EmailInput(
                     email = email,
                     onEmailChange = {
@@ -117,26 +211,13 @@ fun RegisterScreen(
                             null
                         }
                     },
-                    error = emailError
+                    error = emailError,
+                    modifier = Modifier.fillMaxWidth()
                 )
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(Modifier.height(16.dp))
 
-                PhoneInput(
-                    phone = phone,
-                    onPhoneChange = {
-                        phone = it
-                        phoneError = if (it.isNotEmpty() && !isValidPhone(it)) {
-                            "Please enter a valid phone number"
-                        } else {
-                            null
-                        }
-                    },
-                    error = phoneError
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
+                // Password Input
                 PasswordInput(
                     password = password,
                     isPasswordVisible = isPasswordVisible,
@@ -159,11 +240,13 @@ fun RegisterScreen(
                     onTogglePasswordVisibility = { isPasswordVisible = !isPasswordVisible },
                     label = "Password",
                     placeholder = "Create your password",
-                    error = passwordError
+                    error = passwordError,
+                    modifier = Modifier.fillMaxWidth()
                 )
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(Modifier.height(16.dp))
 
+                // Confirm Password Input
                 PasswordInput(
                     password = confirmPassword,
                     isPasswordVisible = isConfirmPasswordVisible,
@@ -179,13 +262,14 @@ fun RegisterScreen(
                     label = "Confirm Password",
                     placeholder = "Confirm your password",
                     imeAction = ImeAction.Done,
-                    error = confirmPasswordError
+                    error = confirmPasswordError,
+                    modifier = Modifier.fillMaxWidth()
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(Modifier.height(24.dp))
 
-                SignUpButton(
-                    isLoading = registerState is RegisterState.Loading,
+                // Sign Up Button
+                Button(
                     onClick = {
                         nameError = if (fullName.isBlank()) "Name is required" else null
                         emailError = if (email.isBlank()) {
@@ -205,88 +289,146 @@ fun RegisterScreen(
                         } else {
                             null
                         }
-                        phoneError = if (phone.isNotEmpty() && !isValidPhone(phone)) {
-                            "Please enter a valid phone number"
-                        } else {
-                            null
-                        }
 
-                        if (nameError == null && emailError == null && phoneError == null &&
+                        if (nameError == null && emailError == null &&
                             passwordError == null && confirmPasswordError == null) {
                             focusManager.clearFocus()
-                            viewModel.registerWithEmailAndPassword(fullName, email, password, phone)
+                            viewModel.registerWithEmailAndPassword(fullName, email, password)
                         }
+                    },
+                    enabled = !(registerState is RegisterState.Loading),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = BlueBtn)
+                ) {
+                    if (registerState is RegisterState.Loading) {
+                        CircularProgressIndicator(
+                            color = Color.White,
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            "Creating Account...",
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    } else {
+                        Text(
+                            text = "Sign Up",
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
-                )
+                }
 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(Modifier.height(24.dp))
 
-                AlternativeSignUpOptions(
-                    isLoading = registerState is RegisterState.Loading || registerState is RegisterState.GoogleSignInLoading,
-                    isGoogleLoading = registerState is RegisterState.GoogleSignInLoading,
-                    onGoogleSignUpClick = {
+                // Divider
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    HorizontalDivider(
+                        modifier = Modifier.weight(1f),
+                        color = BorderGray
+                    )
+                    Text(
+                        "Or continue with",
+                        fontSize = 14.sp,
+                        color = TextSecondary,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.weight(1f),
+                        color = BorderGray
+                    )
+                }
+
+                Spacer(Modifier.height(24.dp))
+
+                // Google Sign Up Button
+                OutlinedButton(
+                    onClick = {
                         try {
                             val signInIntent = viewModel.startGoogleSignIn()
                             googleSignInLauncher.launch(signInIntent)
                         } catch (e: Exception) {
                             viewModel.cancelGoogleSignIn()
                         }
+                    },
+                    enabled = !(registerState is RegisterState.Loading || registerState is RegisterState.GoogleSignInLoading),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(),
+                    border = ButtonDefaults.outlinedButtonBorder.copy(
+                        width = 1.dp
+                    )
+                ) {
+                    if (registerState is RegisterState.GoogleSignInLoading) {
+                        CircularProgressIndicator(
+                            color = BlueBtn,
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            "Signing in...",
+                            color = TextPrimary,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.AccountCircle,
+                            contentDescription = null,
+                            tint = BlueBtn,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            "Continue with Google",
+                            color = TextPrimary,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium
+                        )
                     }
-                )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                SignInPrompt(
-                    onSignInClick = {
-                        navController.popBackStack()
-                    }
-                )
-
-                // Error Messages
-                when (val state = registerState) {
-                    is RegisterState.Error -> {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.errorContainer
-                            )
-                        ) {
-                            Text(
-                                text = state.message,
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                                modifier = Modifier.padding(16.dp)
-                            )
-                        }
-                    }
-                    else -> {}
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(Modifier.height(32.dp))
+
+                // Sign In Prompt
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Already have an account? ",
+                        fontSize = 14.sp,
+                        color = TextSecondary
+                    )
+                    Text(
+                        text = "Sign In",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = BlueBtn,
+                        modifier = Modifier.clickable {
+                            navController.popBackStack()
+                        }
+                    )
+                }
+
+                Spacer(Modifier.height(24.dp))
             }
         }
     }
-}
-
-private fun isValidPhone(phone: String): Boolean {
-    return phone.length >= 10 && phone.all { it.isDigit() || it == '+' || it == ' ' || it == '-' || it == '(' || it == ')' }
-}
-
-@Composable
-private fun CreateAccountHeader() {
-    Text(
-        text = "Create Account",
-        fontSize = 24.sp,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.onBackground,
-        style = androidx.compose.ui.text.TextStyle(lineHeight = 0.sp)
-    )
-    Text(
-        text = "Please fill in your details to continue",
-        fontSize = 14.sp,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
-
-    Spacer(modifier = Modifier.height(3.dp))
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -294,37 +436,50 @@ private fun CreateAccountHeader() {
 private fun FullNameInput(
     fullName: String,
     onFullNameChange: (String) -> Unit,
-    error: String? = null
+    error: String? = null,
+    modifier: Modifier = Modifier
 ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Column(modifier = modifier) {
         Text(
             text = "Full Name",
             fontSize = 14.sp,
-            color = MaterialTheme.colorScheme.onBackground,
+            fontWeight = FontWeight.Medium,
+            color = TextPrimary,
             modifier = Modifier.padding(bottom = 8.dp)
         )
 
         OutlinedTextField(
             value = fullName,
             onValueChange = onFullNameChange,
-            placeholder = { Text("Enter your full name") },
+            placeholder = { Text("Enter your full name", color = TextSecondary) },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Default.Person,
+                    contentDescription = null,
+                    tint = TextSecondary
+                )
+            },
             singleLine = true,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
+            modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Text,
                 imeAction = ImeAction.Next
             ),
-            shape = RoundedCornerShape(8.dp),
-            isError = error != null
+            shape = RoundedCornerShape(12.dp),
+            isError = error != null,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = BlueBtn,
+                unfocusedBorderColor = BorderGray,
+                cursorColor = BlueBtn,
+                errorBorderColor = ErrorRed
+            )
         )
 
         if (error != null) {
             Text(
                 text = error,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall,
+                color = ErrorRed,
+                fontSize = 12.sp,
                 modifier = Modifier.padding(start = 4.dp, top = 4.dp)
             )
         }
@@ -336,79 +491,50 @@ private fun FullNameInput(
 private fun EmailInput(
     email: String,
     onEmailChange: (String) -> Unit,
-    error: String? = null
+    error: String? = null,
+    modifier: Modifier = Modifier
 ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Column(modifier = modifier) {
         Text(
             text = "Email",
             fontSize = 14.sp,
-            color = MaterialTheme.colorScheme.onBackground,
+            fontWeight = FontWeight.Medium,
+            color = TextPrimary,
             modifier = Modifier.padding(bottom = 8.dp)
         )
 
         OutlinedTextField(
             value = email,
             onValueChange = onEmailChange,
-            placeholder = { Text("Enter your email") },
+            placeholder = { Text("Enter your email", color = TextSecondary) },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Default.Email,
+                    contentDescription = null,
+                    tint = TextSecondary
+                )
+            },
             singleLine = true,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
+            modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Email,
                 imeAction = ImeAction.Next
             ),
-            shape = RoundedCornerShape(8.dp),
-            isError = error != null
-        )
-
-        if (error != null) {
-            Text(
-                text = error,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(start = 4.dp, top = 4.dp)
+            shape = RoundedCornerShape(12.dp),
+            isError = error != null,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = BlueBtn,
+                unfocusedBorderColor = BorderGray,
+                cursorColor = BlueBtn,
+                errorBorderColor = ErrorRed
             )
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun PhoneInput(
-    phone: String,
-    onPhoneChange: (String) -> Unit,
-    error: String? = null
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = "Phone Number (Optional)",
-            fontSize = 14.sp,
-            color = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-
-        OutlinedTextField(
-            value = phone,
-            onValueChange = onPhoneChange,
-            placeholder = { Text("Enter your phone number") },
-            singleLine = true,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Phone,
-                imeAction = ImeAction.Next
-            ),
-            shape = RoundedCornerShape(8.dp),
-            isError = error != null
         )
 
         if (error != null) {
             Text(
                 text = error,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall,
+                color = ErrorRed,
+                fontSize = 12.sp,
                 modifier = Modifier.padding(start = 4.dp, top = 4.dp)
             )
         }
@@ -425,22 +551,41 @@ private fun PasswordInput(
     label: String,
     placeholder: String,
     imeAction: ImeAction = ImeAction.Next,
-    error: String? = null
+    error: String? = null,
+    modifier: Modifier = Modifier
 ) {
     val focusManager = LocalFocusManager.current
 
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Column(modifier = modifier) {
         Text(
             text = label,
             fontSize = 14.sp,
-            color = MaterialTheme.colorScheme.onBackground,
+            fontWeight = FontWeight.Medium,
+            color = TextPrimary,
             modifier = Modifier.padding(bottom = 8.dp)
         )
 
         OutlinedTextField(
             value = password,
             onValueChange = onPasswordChange,
-            placeholder = { Text(placeholder) },
+            placeholder = { Text(placeholder, color = TextSecondary) },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Default.Lock,
+                    contentDescription = null,
+                    tint = TextSecondary
+                )
+            },
+            trailingIcon = {
+                IconButton(onClick = onTogglePasswordVisibility) {
+                    Icon(
+                        imageVector = if (isPasswordVisible)
+                            Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                        contentDescription = "Toggle password visibility",
+                        tint = TextSecondary
+                    )
+                }
+            },
             singleLine = true,
             visualTransformation = if (isPasswordVisible)
                 VisualTransformation.None else PasswordVisualTransformation(),
@@ -451,154 +596,24 @@ private fun PasswordInput(
             keyboardActions = KeyboardActions(
                 onDone = { focusManager.clearFocus() }
             ),
-            trailingIcon = {
-                IconButton(onClick = onTogglePasswordVisibility) {
-                    Icon(
-                        imageVector = if (isPasswordVisible)
-                            Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                        contentDescription = "Toggle password visibility"
-                    )
-                }
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-            shape = RoundedCornerShape(8.dp),
-            isError = error != null
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            isError = error != null,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = BlueBtn,
+                unfocusedBorderColor = BorderGray,
+                cursorColor = BlueBtn,
+                errorBorderColor = ErrorRed
+            )
         )
 
         if (error != null) {
             Text(
                 text = error,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall,
+                color = ErrorRed,
+                fontSize = 12.sp,
                 modifier = Modifier.padding(start = 4.dp, top = 4.dp)
             )
         }
-    }
-}
-
-@Composable
-private fun SignUpButton(
-    isLoading: Boolean,
-    onClick: () -> Unit
-) {
-    Button(
-        onClick = onClick,
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(56.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = GoldenShade
-        ),
-        shape = RoundedCornerShape(8.dp),
-        enabled = !isLoading
-    ) {
-        if (isLoading) {
-            CircularProgressIndicator(
-                color = Color.White,
-                modifier = Modifier.size(24.dp)
-            )
-        } else {
-            Text(
-                text = "Sign Up",
-                color = Color.White,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
-    }
-}
-
-@Composable
-private fun AlternativeSignUpOptions(
-    isLoading: Boolean,
-    isGoogleLoading: Boolean,
-    onGoogleSignUpClick: () -> Unit
-) {
-    Spacer(modifier = Modifier.height(2.dp))
-
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        HorizontalDivider(
-            modifier = Modifier
-                .weight(1f)
-                .height(1.dp)
-        )
-
-        Text(
-            text = "Or continue with",
-            fontSize = 14.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 8.dp)
-        )
-
-        HorizontalDivider(
-            modifier = Modifier
-                .weight(1f)
-                .height(1.dp)
-        )
-    }
-
-    Spacer(modifier = Modifier.height(8.dp))
-
-    OutlinedButton(
-        onClick = onGoogleSignUpClick,
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(56.dp),
-        colors = ButtonDefaults.outlinedButtonColors(),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-        shape = RoundedCornerShape(8.dp),
-        enabled = !isLoading
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
-        ) {
-            if (isGoogleLoading) {
-                CircularProgressIndicator(
-                    color = GoldenShade,
-                    modifier = Modifier.size(20.dp),
-                    strokeWidth = 2.dp
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Signing in...", color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp)
-            } else {
-                Text("G", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = GoldenShade)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Continue with Google",
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = 16.sp
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun SignInPrompt(onSignInClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 4.dp, bottom = 4.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = "Already have an account? ",
-            fontSize = 14.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            text = "Sign In",
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Bold,
-            color = GoldenShade,
-            modifier = Modifier.clickable(onClick = onSignInClick)
-        )
     }
 }

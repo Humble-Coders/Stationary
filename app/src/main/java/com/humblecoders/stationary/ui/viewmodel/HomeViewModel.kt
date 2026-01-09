@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
 import com.humblecoders.stationary.data.model.PrintOrder
+import com.humblecoders.stationary.data.model.PricePerPage
 import com.humblecoders.stationary.data.repository.PrintOrderRepository
 import com.humblecoders.stationary.data.repository.ShopSettingsRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,7 +21,8 @@ data class HomeUiState(
     val isLoading: Boolean = false, // Changed default to false
     val error: String? = null,
     val customerId: String = "",
-    val isCustomerIdSet: Boolean = false
+    val isCustomerIdSet: Boolean = false,
+    val pricePerPage: PricePerPage = PricePerPage() // Add prices from Firestore
 )
 
 class HomeViewModel(
@@ -45,6 +47,7 @@ class HomeViewModel(
 
     init {
         observeShopStatus()
+        observeShopSettings()
 
         // Add auth state listener
         FirebaseAuth.getInstance().addAuthStateListener(authStateListener)
@@ -90,6 +93,22 @@ class HomeViewModel(
                 .collect { isOpen ->
                     _uiState.value = _uiState.value.copy(
                         isShopOpen = isOpen,
+                        error = null
+                    )
+                }
+        }
+    }
+
+    private fun observeShopSettings() {
+        viewModelScope.launch {
+            shopSettingsRepository.observeShopSettings()
+                .catch { e ->
+                    Log.e("HomeViewModel", "Error observing shop settings", e)
+                }
+                .collect { settings ->
+                    _uiState.value = _uiState.value.copy(
+                        isShopOpen = settings.shopOpen,
+                        pricePerPage = settings.pricePerPage,
                         error = null
                     )
                 }

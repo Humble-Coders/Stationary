@@ -5,8 +5,6 @@ data class UserProfile(
     val id: String = "",
     val name: String = "",
     val email: String = "",
-    val phone: String = "",
-    val dateOfBirth: String = "", // Format: "yyyy-MM-dd"
     val profilePictureUrl: String = "",
     val isGoogleSignIn: Boolean = false,
     val createdAt: Long = 0L,
@@ -14,9 +12,7 @@ data class UserProfile(
 )
 
 data class ProfileUpdateRequest(
-    val name: String,
-    val phone: String,
-    val dateOfBirth: String
+    val name: String
 )
 
 sealed class ProfileState {

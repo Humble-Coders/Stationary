@@ -118,6 +118,13 @@ class LoginViewModel(private val repository: FirebaseAuthRepository) : ViewModel
 
     fun resetState() {
         _loginState.value = LoginState.Idle
+        _userProfile.value = null
+    }
+    
+    fun clearAllState() {
+        Log.d("LoginViewModel", "Clearing all login state")
+        _loginState.value = LoginState.Idle
+        _userProfile.value = null
     }
 
     fun isUserLoggedIn() = repository.isUserLoggedIn()

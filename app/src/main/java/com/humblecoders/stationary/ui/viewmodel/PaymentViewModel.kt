@@ -57,7 +57,7 @@ class PaymentViewModel : ViewModel() {
                         Log.e("PaymentViewModel", "Failed to initiate payment", exception)
                         _uiState.value = _uiState.value.copy(
                             isProcessing = false,
-                            error = "Failed to initiate payment: ${exception.message}"
+                            error = "Unable to start payment. Please try again."
                         )
                     }
                 )
@@ -65,7 +65,7 @@ class PaymentViewModel : ViewModel() {
                 Log.e("PaymentViewModel", "Error initiating payment", e)
                 _uiState.value = _uiState.value.copy(
                     isProcessing = false,
-                    error = "Error: ${e.message}"
+                    error = "Unable to start payment. Please try again."
                 )
             }
         }
@@ -132,7 +132,7 @@ class PaymentViewModel : ViewModel() {
                         Log.e("PaymentViewModel", "Payment verification failed", exception)
                         _uiState.value = _uiState.value.copy(
                             isProcessing = false,
-                            error = "Verification failed: ${exception.message}"
+                            error = "Payment verification failed. Please contact support if payment was deducted."
                         )
                     }
                 )
@@ -140,7 +140,7 @@ class PaymentViewModel : ViewModel() {
                 Log.e("PaymentViewModel", "Error verifying payment", e)
                 _uiState.value = _uiState.value.copy(
                     isProcessing = false,
-                    error = "Error: ${e.message}"
+                    error = "Payment verification failed. Please contact support if payment was deducted."
                 )
             }
         }
@@ -148,13 +148,42 @@ class PaymentViewModel : ViewModel() {
 
     fun handlePaymentError(errorCode: Int, errorMessage: String) {
         Log.e("PaymentViewModel", "Payment error: $errorCode - $errorMessage")
+        
+        // Map error codes to user-friendly messages
+        val userFriendlyMessage = when (errorCode) {
+            2 -> "Payment was cancelled"
+            in 0..1 -> "Payment could not be processed. Please try again."
+            else -> {
+                // Check if it's a cancellation-related error message
+                val lowerMessage = errorMessage.lowercase()
+                if (lowerMessage.contains("cancel") || 
+                    lowerMessage.contains("dismissed") || 
+                    lowerMessage.contains("back") ||
+                    lowerMessage.contains("user cancelled")) {
+                    "Payment was cancelled"
+                } else {
+                    "Payment could not be completed. Please try again."
+                }
+            }
+        }
+        
         _uiState.value = _uiState.value.copy(
             isProcessing = false,
-            error = "Payment failed: $errorMessage"
+            error = userFriendlyMessage
         )
     }
 
+    fun clearError() {
+        _uiState.value = _uiState.value.copy(error = null)
+    }
+
     fun resetPaymentState() {
+        _uiState.value = PaymentUiState()
+        currentOrderId = null
+    }
+    
+    fun clearAllState() {
+        Log.d("PaymentViewModel", "Clearing all payment state")
         _uiState.value = PaymentUiState()
         currentOrderId = null
     }

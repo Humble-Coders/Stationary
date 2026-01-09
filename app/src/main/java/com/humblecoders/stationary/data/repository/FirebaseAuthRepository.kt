@@ -103,7 +103,7 @@ class FirebaseAuthRepository(
         }
     }
 
-    suspend fun createUserWithEmailAndPassword(name: String, email: String, password: String, phone: String = ""): Result<Unit> {
+    suspend fun createUserWithEmailAndPassword(name: String, email: String, password: String): Result<Unit> {
         return try {
             val trimmedEmail = email.trim()
 
@@ -126,37 +126,12 @@ class FirebaseAuthRepository(
 
                 Log.d("AuthRepository", "User created successfully with UID: $userId")
 
-                val encodedEmail = trimmedEmail
-
-                val tempUserDoc = try {
-                    FirebaseFirestore.getInstance()
-                        .collection("users")
-                        .document(encodedEmail)
-                        .get()
-                        .await()
-                } catch (e: Exception) {
-                    Log.w("AuthRepository", "Error checking for temp user: ${e.message}")
-                    null
-                }
-
                 val userProfileData = hashMapOf(
                     "email" to trimmedEmail,
-                    "encodedEmail" to encodedEmail,
                     "name" to name,
-                    "phone" to phone,
                     "createdAt" to System.currentTimeMillis(),
-                    "isTemporary" to false,
                     "googleSignIn" to false
                 )
-
-                if (tempUserDoc != null && tempUserDoc.exists()) {
-                    Log.d("AuthRepository", "Temporary user document found, migrating data")
-                    FirebaseFirestore.getInstance()
-                        .collection("users")
-                        .document(encodedEmail)
-                        .delete()
-                        .await()
-                }
 
                 FirebaseFirestore.getInstance()
                     .collection("users")
@@ -313,14 +288,10 @@ class FirebaseAuthRepository(
         try {
             val userProfileData = hashMapOf(
                 "email" to (account.email ?: ""),
-                "encodedEmail" to (account.email ?: ""),
                 "name" to (account.displayName ?: ""),
-                "phone" to "",
                 "createdAt" to System.currentTimeMillis(),
-                "isTemporary" to false,
                 "googleSignIn" to true,
-                "profilePictureUrl" to (account.photoUrl?.toString() ?: ""),
-                "googleId" to (account.id ?: "")
+                "profilePictureUrl" to (account.photoUrl?.toString() ?: "")
             )
 
             FirebaseFirestore.getInstance()

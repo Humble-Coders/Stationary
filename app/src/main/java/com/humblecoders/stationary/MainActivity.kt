@@ -16,6 +16,7 @@ import androidx.navigation.compose.DialogNavigator
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
+import com.humblecoders.stationary.data.repository.BugReportRepository
 import com.humblecoders.stationary.data.repository.FirebaseAuthRepository
 import com.humblecoders.stationary.data.repository.PrintOrderRepository
 import com.humblecoders.stationary.data.repository.ProfileRepository
@@ -40,6 +41,7 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
     private lateinit var profileRepository: ProfileRepository
     private lateinit var printOrderRepository: PrintOrderRepository
     private lateinit var shopSettingsRepository: ShopSettingsRepository
+    private lateinit var bugReportRepository: BugReportRepository
 
     private lateinit var loginViewModel: LoginViewModel
     private lateinit var registerViewModel: RegisterViewModel
@@ -164,6 +166,7 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
         profileRepository = ProfileRepository(firebaseAuth, firestore, this)
         printOrderRepository = PrintOrderRepository(firestore, storage)
         shopSettingsRepository = ShopSettingsRepository(firestore)
+        bugReportRepository = BugReportRepository(firestore, storage)
     }
 
     private fun initializeRazorpayService() {
@@ -203,7 +206,7 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
     private fun initializeViewModels() {
         loginViewModel = LoginViewModel(authRepository)
         registerViewModel = RegisterViewModel(authRepository)
-        profileViewModel = ProfileViewModel(profileRepository, authRepository)
+        profileViewModel = ProfileViewModel(profileRepository, authRepository, bugReportRepository)
         homeViewModel = HomeViewModel(printOrderRepository, shopSettingsRepository)
         documentUploadViewModel = DocumentUploadViewModel(printOrderRepository, shopSettingsRepository)
         paymentViewModel = PaymentViewModel()

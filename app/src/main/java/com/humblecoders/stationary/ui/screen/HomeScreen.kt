@@ -6,18 +6,20 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Segment
-import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material.icons.filled.Print
+import androidx.compose.material.icons.filled.ShoppingBag
+import androidx.compose.material.icons.filled.Store
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Print
@@ -36,19 +38,28 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.humblecoders.stationary.data.model.PrintOrder
 import com.humblecoders.stationary.data.model.ShopId
-import com.humblecoders.stationary.ui.component.OrderCard
-import com.humblecoders.stationary.ui.component.ShopClosedCard
+import com.humblecoders.stationary.data.model.PricePerPage
 import com.humblecoders.stationary.ui.viewmodel.HomeViewModel
 import kotlinx.coroutines.launch
+
+// Modern color palette
+private val BlueBtn = Color(0xFF3B82F6)
+private val BackgroundGray = Color(0xFFF9FAFB)
+private val CardWhite = Color.White
+private val TextPrimary = Color(0xFF111827)
+private val TextSecondary = Color(0xFF6B7280)
+private val BorderGray = Color(0xFFE5E7EB)
+private val SuccessGreen = Color(0xFF10B981)
+private val ErrorRed = Color(0xFFEF4444)
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class)
 @Composable
 fun HomeScreen(
     homeViewModel: HomeViewModel,
-    onNavigateToUpload: (String) -> Unit, // Now takes shopId parameter
-    onNavigateToOrderHistory : () -> Unit,
-    onNavigateToProfile: () -> Unit
-
+    onNavigateToUpload: (String) -> Unit,
+    onNavigateToOrderHistory: () -> Unit,
+    onNavigateToProfile: () -> Unit,
+    onNavigateToActiveOrders: () -> Unit = {}
 ) {
     val homeUiState by homeViewModel.uiState.collectAsState()
     val coroutineScope = rememberCoroutineScope()
@@ -70,76 +81,59 @@ fun HomeScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Print Shop") },
-                actions = {
-                    if (homeUiState.orders.isNotEmpty()) {
-                        IconButton(onClick = { homeViewModel.refreshOrders() }) {
+            Surface(
+                color = CardWhite,
+                shadowElevation = 2.dp
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column {
+                        Text(
+                            text = "Print Shop",
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                        Text(
+                            text = "Select a shop to start printing",
+                            fontSize = 14.sp,
+                            color = TextSecondary
+                        )
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        IconButton(
+                            onClick = onNavigateToOrderHistory,
+                            modifier = Modifier.size(40.dp)
+                        ) {
                             Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = "Refresh Orders"
+                                imageVector = Icons.Outlined.History,
+                                contentDescription = "Order History",
+                                tint = TextSecondary
+                            )
+                        }
+
+                        IconButton(
+                            onClick = onNavigateToProfile,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = "Profile",
+                                tint = TextSecondary
                             )
                         }
                     }
                 }
-            )
-        },
-        // Replace the existing FloatingActionButton with this
-        floatingActionButton = {
-            if (homeUiState.isShopOpen) {
-                var expanded by remember { mutableStateOf(false) }
-
-                Column(
-                    horizontalAlignment = Alignment.End
-                ) {
-                    AnimatedVisibility(
-                        visible = expanded,
-                        enter = fadeIn() + expandVertically(),
-                        exit = fadeOut() + shrinkVertically()
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.End,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            // Profile FAB
-                            SmallFloatingActionButton(
-                                onClick = {
-                                    expanded = false
-                                    onNavigateToProfile()
-                                },
-                                containerColor = MaterialTheme.colorScheme.tertiaryContainer
-                            ) {
-                                Icon(Icons.Default.Person, contentDescription = "Profile")
-                            }
-
-                            // History FAB
-                            SmallFloatingActionButton(
-                                onClick = {
-                                    expanded = false
-                                    onNavigateToOrderHistory()
-                                },
-                                containerColor = MaterialTheme.colorScheme.secondaryContainer
-                            ) {
-                                Icon(Icons.Outlined.History, contentDescription = "Order History")
-                            }
-
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    FloatingActionButton(
-                        onClick = { expanded = !expanded }
-                    ) {
-                        Icon(
-                            imageVector = if (expanded) Icons.Default.Close else Icons.Default.Segment,
-                            contentDescription = if (expanded) "Close" else "More Options"
-                        )
-                    }
-                }
             }
-        }
-
+        },
+        containerColor = BackgroundGray
     ) { paddingValues ->
         Box(
             modifier = Modifier
@@ -150,89 +144,55 @@ fun HomeScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                if (!homeUiState.isShopOpen) {
-                    ShopClosedCard(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 16.dp)
+                // Active orders notification bar
+                if (activeOrders.isNotEmpty()) {
+                    ActiveOrdersBar(
+                        orderCount = activeOrders.size,
+                        onClick = onNavigateToActiveOrders
                     )
                 }
 
-                // Status bar showing shop status
-                AnimatedVisibility(
-                    visible = homeUiState.isShopOpen,
-                    enter = fadeIn(),
-                    exit = fadeOut()
-                ) {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 16.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
-                        )
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(10.dp)
-                                    .clip(CircleShape)
-                                    .background(Color.Green)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Shop is open and ready to process your print orders",
-                                fontSize = 14.sp,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
-                    }
-                }
+                // Shop cards section
+                Text(
+                    text = "Available Shops",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
 
+                // GBlock Shop Card
+                ShopCard(
+                    shopName = ShopId.GBLOCK.displayName,
+                    shopId = ShopId.GBLOCK.name,
+                    isOpen = homeUiState.isShopOpen,
+                    pricePerPage = homeUiState.pricePerPage,
+                    onSelectShop = { onNavigateToUpload(ShopId.GBLOCK.name) }
+                )
+
+                // COS Shop Card
+                ShopCard(
+                    shopName = ShopId.COS.displayName,
+                    shopId = ShopId.COS.name,
+                    isOpen = homeUiState.isShopOpen,
+                    pricePerPage = homeUiState.pricePerPage,
+                    onSelectShop = { onNavigateToUpload(ShopId.COS.name) }
+                )
+
+                // Loading indicator
                 if (homeUiState.isLoading && activeOrders.isEmpty()) {
                     Box(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(32.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator()
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = "Loading your orders...",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                } else {
-                    if (activeOrders.isEmpty()) {
-                        EmptyOrdersPlaceholder(
-                            isShopOpen = homeUiState.isShopOpen,
-                            onNavigateToUpload = onNavigateToUpload,
-                            hasCompletedOrders = homeUiState.orders.isNotEmpty() // Show if there are any orders (even completed ones)
-                        )
-                    } else {
-                        // Show stationary selection when shop is open
-                        if (homeUiState.isShopOpen) {
-                            StationarySelectionCard(
-                                onSelectStationary = { shopId: String ->
-                                    onNavigateToUpload(shopId)
-                                },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(bottom = 16.dp)
-                            )
-                        }
-                        OrdersListSection(
-                            orders = activeOrders, // Use filtered orders
-                            onOrderClick = { /* Handle order click */ },
-                            viewModel = homeViewModel
+                        CircularProgressIndicator(
+                            color = BlueBtn,
+                            strokeWidth = 3.dp
                         )
                     }
                 }
@@ -240,10 +200,10 @@ fun HomeScreen(
                 // Error display
                 homeUiState.error?.let { error ->
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 16.dp)
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer
+                        ),
+                        shape = RoundedCornerShape(12.dp)
                     ) {
                         Row(
                             modifier = Modifier.padding(16.dp),
@@ -255,10 +215,11 @@ fun HomeScreen(
                                 tint = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.size(24.dp)
                             )
-                            Spacer(modifier = Modifier.width(12.dp))
+                            Spacer(Modifier.width(12.dp))
                             Text(
                                 text = error,
-                                color = MaterialTheme.colorScheme.onErrorContainer
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                fontSize = 14.sp
                             )
                         }
                     }
@@ -268,166 +229,265 @@ fun HomeScreen(
             PullRefreshIndicator(
                 refreshing = homeUiState.isLoading,
                 state = pullRefreshState,
-                modifier = Modifier.align(Alignment.TopCenter)
+                modifier = Modifier.align(Alignment.TopCenter),
+                backgroundColor = CardWhite,
+                contentColor = BlueBtn
             )
         }
     }
 }
 
 @Composable
-private fun EmptyOrdersPlaceholder(
-    isShopOpen: Boolean,
-    onNavigateToUpload: (String) -> Unit,
-    hasCompletedOrders: Boolean = false
+private fun ActiveOrdersBar(
+    orderCount: Int,
+    onClick: () -> Unit
 ) {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = BlueBtn
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(24.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.Print,
-                contentDescription = null,
-                modifier = Modifier.size(72.dp),
-                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Text(
-                text = if (hasCompletedOrders) "No Active Orders" else "No Print Orders Yet",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = if (hasCompletedOrders)
-                    "You don't have any pending orders. Check your order history to see completed orders."
-                else
-                    "Your print history will appear here once you upload documents for printing.",
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 24.dp)
-            )
-
-            if (isShopOpen) {
-                Spacer(modifier = Modifier.height(24.dp))
-
-                StationarySelectionCard(
-                    onSelectStationary = { shopId: String ->
-                        onNavigateToUpload(shopId)
-                    },
-                    modifier = Modifier.padding(horizontal = 24.dp)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun OrdersListSection(
-    orders: List<PrintOrder>,
-    onOrderClick: (PrintOrder) -> Unit,
-    viewModel: HomeViewModel
-) {
-    Column {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(
-                text = "Your Orders",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 8.dp, top = 8.dp)
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = Color.White,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ShoppingBag,
+                            contentDescription = null,
+                            tint = BlueBtn,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
 
-            Text(
-                text = "${orders.size} ${if (orders.size == 1) "order" else "orders"}",
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(vertical = 8.dp)
-        ) {
-            items(
-                items = orders,
-                key = { it.orderId }
-            ) { order ->
-                OrderCard(
-                    order = order,
-                    onClick = { onOrderClick(order) },
-                    modifier = Modifier,
-                    getPaymentStatusDisplay = viewModel::getPaymentStatusDisplay,
-                    getOrderStatusDisplay = viewModel::getOrderStatusDisplay,
-                )
+                Column {
+                    Text(
+                        text = "Active Orders",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Text(
+                        text = "$orderCount ${if (orderCount == 1) "order" else "orders"} in progress",
+                        fontSize = 13.sp,
+                        color = Color.White.copy(alpha = 0.9f)
+                    )
+                }
             }
+
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = "View Orders",
+                tint = Color.White,
+                modifier = Modifier.size(24.dp)
+            )
         }
     }
 }
 
 @Composable
-private fun StationarySelectionCard(
-    onSelectStationary: (String) -> Unit,
-    modifier: Modifier = Modifier
+private fun ShopCard(
+    shopName: String,
+    shopId: String,
+    isOpen: Boolean,
+    pricePerPage: PricePerPage,
+    onSelectShop: () -> Unit
 ) {
     Card(
-        modifier = modifier,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = isOpen, onClick = onSelectShop),
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer
-        )
+            containerColor = if (isOpen) CardWhite else CardWhite.copy(alpha = 0.7f)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(
-                text = "Select Stationary",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimaryContainer
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
+            // Header row with shop name and status badge
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
             ) {
-                // GBlock Button
-                Button(
-                    onClick = { onSelectStationary(ShopId.GBLOCK.name) },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.weight(1f)
                 ) {
-                    Text(ShopId.GBLOCK.displayName)
+                    // Shop icon - larger
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = if (isOpen) BlueBtn.copy(alpha = 0.12f) else Color(0xFFE5E7EB),
+                        modifier = Modifier.size(72.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Store,
+                                contentDescription = null,
+                                tint = if (isOpen) BlueBtn else TextSecondary,
+                                modifier = Modifier.size(36.dp)
+                            )
+                        }
+                    }
+
+                    // Shop name
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = shopName,
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isOpen) TextPrimary else TextSecondary
+                        )
+                        
+                        // Status badge
+                        Surface(
+                            shape = RoundedCornerShape(20.dp),
+                            color = if (isOpen) SuccessGreen.copy(alpha = 0.15f) else ErrorRed.copy(alpha = 0.15f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isOpen) SuccessGreen else ErrorRed)
+                                )
+                                Text(
+                                    text = if (isOpen) "Open Now" else "Closed",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (isOpen) SuccessGreen else ErrorRed
+                                )
+                            }
+                        }
+                    }
                 }
 
-                // Cos Button
-                Button(
-                    onClick = { onSelectStationary(ShopId.COS.name) },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.secondary
-                    )
+                // Arrow icon - larger
+                if (isOpen) {
+                    Surface(
+                        shape = CircleShape,
+                        color = BlueBtn.copy(alpha = 0.1f),
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                contentDescription = "Select Shop",
+                                tint = BlueBtn,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Divider
+            HorizontalDivider(
+                color = BorderGray.copy(alpha = 0.5f),
+                thickness = 1.dp
+            )
+
+            // Pricing information
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // B&W pricing
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = if (isOpen) Color(0xFFF3F4F6) else Color(0xFFE5E7EB).copy(alpha = 0.5f),
+                    modifier = Modifier.weight(1f)
                 ) {
-                    Text(ShopId.COS.displayName)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "Black & White",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = if (isOpen) TextSecondary else TextSecondary.copy(alpha = 0.6f)
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "₹${String.format("%.0f", pricePerPage.bw)}/page",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isOpen) TextPrimary else TextSecondary.copy(alpha = 0.6f)
+                        )
+                    }
+                }
+
+                // Color pricing
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = if (isOpen) Color(0xFFFEF3C7).copy(alpha = 0.6f) else Color(0xFFE5E7EB).copy(alpha = 0.5f),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "Color",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = if (isOpen) Color(0xFFD97706) else TextSecondary.copy(alpha = 0.6f)
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "₹${String.format("%.0f", pricePerPage.color)}/page",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isOpen) Color(0xFFD97706) else TextSecondary.copy(alpha = 0.6f)
+                        )
+                    }
                 }
             }
         }
     }
 }
-

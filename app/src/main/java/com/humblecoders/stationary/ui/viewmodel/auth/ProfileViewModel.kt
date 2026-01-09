@@ -8,6 +8,7 @@ import com.humblecoders.stationary.data.model.AccountDeletionState
 import com.humblecoders.stationary.data.model.ProfileState
 import com.humblecoders.stationary.data.model.ProfileUpdateState
 import com.humblecoders.stationary.data.model.UserProfile
+import com.humblecoders.stationary.data.repository.BugReportRepository
 import com.humblecoders.stationary.data.repository.FirebaseAuthRepository
 import com.humblecoders.stationary.data.repository.ProfileRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,7 +20,8 @@ import kotlinx.coroutines.delay
 
 class ProfileViewModel(
     private val profileRepository: ProfileRepository,
-    private val authRepository: FirebaseAuthRepository
+    private val authRepository: FirebaseAuthRepository,
+    private val bugReportRepository: BugReportRepository
 ) : ViewModel() {
 
     private val tag = "ProfileViewModel"
@@ -37,6 +39,12 @@ class ProfileViewModel(
 
     private val _isSigningOut = MutableStateFlow(false)
     val isSigningOut: StateFlow<Boolean> = _isSigningOut.asStateFlow()
+
+    private val _isSubmittingBugReport = MutableStateFlow(false)
+    val isSubmittingBugReport: StateFlow<Boolean> = _isSubmittingBugReport.asStateFlow()
+
+    private val _bugReportSubmissionResult = MutableStateFlow<Result<String>?>(null)
+    val bugReportSubmissionResult: StateFlow<Result<String>?> = _bugReportSubmissionResult.asStateFlow()
 
     private var isCurrentlyLoading = false
     private var signOutRequested = false
@@ -169,6 +177,37 @@ class ProfileViewModel(
     }
 
 
+
+    fun submitBugReport(subject: String, description: String, screenshotUri: Uri?) {
+        viewModelScope.launch {
+            try {
+                _isSubmittingBugReport.value = true
+                _bugReportSubmissionResult.value = null
+                Log.d(tag, "Submitting bug report...")
+
+                val result = bugReportRepository.submitBugReport(subject, description, screenshotUri)
+                _bugReportSubmissionResult.value = result
+
+                result.fold(
+                    onSuccess = { bugReportId ->
+                        Log.d(tag, "Bug report submitted successfully: $bugReportId")
+                    },
+                    onFailure = { exception ->
+                        Log.e(tag, "Failed to submit bug report", exception)
+                    }
+                )
+            } catch (e: Exception) {
+                Log.e(tag, "Error submitting bug report", e)
+                _bugReportSubmissionResult.value = Result.failure(e)
+            } finally {
+                _isSubmittingBugReport.value = false
+            }
+        }
+    }
+
+    fun clearBugReportResult() {
+        _bugReportSubmissionResult.value = null
+    }
 
     override fun onCleared() {
         super.onCleared()

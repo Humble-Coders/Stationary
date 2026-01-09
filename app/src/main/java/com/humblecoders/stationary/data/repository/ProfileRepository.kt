@@ -44,9 +44,7 @@ class ProfileRepository(
 
             withContext(Dispatchers.IO) {
                 val updateData = hashMapOf<String, Any>(
-                    "name" to updateRequest.name,
-                    "phone" to updateRequest.phone,
-                    "dateOfBirth" to updateRequest.dateOfBirth
+                    "name" to updateRequest.name
                 )
 
                 firestore.collection("users")
@@ -245,8 +243,6 @@ class ProfileRepository(
                             id = currentUser.uid,
                             name = data["name"] as? String ?: "",
                             email = data["email"] as? String ?: currentUser.email ?: "",
-                            phone = data["phone"] as? String ?: "",
-                            dateOfBirth = data["dateOfBirth"] as? String ?: "",
                             profilePictureUrl = data["profilePictureUrl"] as? String ?: "",
                             isGoogleSignIn = isGoogleSignIn,
                             createdAt = data["createdAt"] as? Long ?: 0L,

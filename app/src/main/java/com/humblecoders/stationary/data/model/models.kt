@@ -228,3 +228,18 @@ enum class ShopId(val displayName: String) {
     GBLOCK("GBlock"),
     COS("Cos")
 }
+
+data class BugReport(
+    val id: String = "",
+    val userId: String = "",
+    val userEmail: String = "",
+    val subject: String = "",
+    val description: String = "",
+    val screenshotUrl: String = "",
+    val status: BugReportStatus = BugReportStatus.PENDING,
+    val createdAt: Timestamp = Timestamp.now()
+)
+
+enum class BugReportStatus {
+    PENDING, REVIEWED, RESOLVED
+}
