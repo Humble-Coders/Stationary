@@ -129,7 +129,11 @@ class DocumentUploadViewModel(
                         uploadProgress = (index.toFloat() / documents.size)
                     )
 
-                    val documentUrl = printOrderRepository.uploadDocument(document.uri!!)
+                    val documentUrl = printOrderRepository.uploadDocument(
+                        document.uri!!, 
+                        document.fileType,
+                        document.fileName
+                    )
                     uploadedDocuments.add(document.copy(uri = Uri.parse(documentUrl)))
                 }
 
@@ -182,8 +186,14 @@ class DocumentUploadViewModel(
                 val detectedFileType = when {
                     FileUtils.isPdfFile(context, firstUri) -> FileType.PDF
                     FileUtils.isDocxFile(context, firstUri) -> FileType.DOCX
+                    FileUtils.isDocFile(context, firstUri) -> FileType.DOC
                     FileUtils.isPptxFile(context, firstUri) -> FileType.PPTX
-                    FileUtils.isImageFile(context, firstUri) -> FileType.IMAGE // Add this line
+                    FileUtils.isPptFile(context, firstUri) -> FileType.PPT
+                    FileUtils.isXlsxFile(context, firstUri) -> FileType.XLSX
+                    FileUtils.isXlsFile(context, firstUri) -> FileType.XLS
+                    FileUtils.isTxtFile(context, firstUri) -> FileType.TXT
+                    FileUtils.isRtfFile(context, firstUri) -> FileType.RTF
+                    FileUtils.isImageFile(context, firstUri) -> FileType.IMAGE
                     else -> {
                         _uiState.value = _uiState.value.copy(error = "Unsupported file format")
                         return@launch
@@ -211,8 +221,14 @@ class DocumentUploadViewModel(
                     when (detectedFileType) {
                         FileType.PDF -> !FileUtils.isPdfFile(context, uri)
                         FileType.DOCX -> !FileUtils.isDocxFile(context, uri)
+                        FileType.DOC -> !FileUtils.isDocFile(context, uri)
                         FileType.PPTX -> !FileUtils.isPptxFile(context, uri)
-                        FileType.IMAGE -> !FileUtils.isImageFile(context, uri) // Add this line
+                        FileType.PPT -> !FileUtils.isPptFile(context, uri)
+                        FileType.XLSX -> !FileUtils.isXlsxFile(context, uri)
+                        FileType.XLS -> !FileUtils.isXlsFile(context, uri)
+                        FileType.TXT -> !FileUtils.isTxtFile(context, uri)
+                        FileType.RTF -> !FileUtils.isRtfFile(context, uri)
+                        FileType.IMAGE -> !FileUtils.isImageFile(context, uri)
                     }
                 }
 
@@ -309,7 +325,7 @@ class DocumentUploadViewModel(
                             printSettings = PrintSettings(pagesToPrint = PageSelection.ALL)
                         )
                     }
-                    FileType.IMAGE -> { // Add this entire case
+                    FileType.IMAGE -> {
                         val previewBitmap = generateImagePreview(context, uri)
                         DocumentItem(
                             id = documentId,
@@ -325,6 +341,84 @@ class DocumentUploadViewModel(
                                 copies = 1 // Default to 1 copy for images
                             ),
                             previewBitmap = previewBitmap
+                        )
+                    }
+                    FileType.DOC -> {
+                        DocumentItem(
+                            id = documentId,
+                            uri = uri,
+                            fileName = fileName,
+                            fileSize = fileSize,
+                            fileType = fileType,
+                            pageCount = 1,
+                            needsUserPageInput = false,
+                            userInputPageCount = 0,
+                            printSettings = PrintSettings(pagesToPrint = PageSelection.ALL)
+                        )
+                    }
+                    FileType.PPT -> {
+                        DocumentItem(
+                            id = documentId,
+                            uri = uri,
+                            fileName = fileName,
+                            fileSize = fileSize,
+                            fileType = fileType,
+                            pageCount = 1,
+                            needsUserPageInput = false,
+                            userInputPageCount = 0,
+                            printSettings = PrintSettings(pagesToPrint = PageSelection.ALL)
+                        )
+                    }
+                    FileType.XLSX -> {
+                        DocumentItem(
+                            id = documentId,
+                            uri = uri,
+                            fileName = fileName,
+                            fileSize = fileSize,
+                            fileType = fileType,
+                            pageCount = 1,
+                            needsUserPageInput = false,
+                            userInputPageCount = 0,
+                            printSettings = PrintSettings(pagesToPrint = PageSelection.ALL)
+                        )
+                    }
+                    FileType.XLS -> {
+                        DocumentItem(
+                            id = documentId,
+                            uri = uri,
+                            fileName = fileName,
+                            fileSize = fileSize,
+                            fileType = fileType,
+                            pageCount = 1,
+                            needsUserPageInput = false,
+                            userInputPageCount = 0,
+                            printSettings = PrintSettings(pagesToPrint = PageSelection.ALL)
+                        )
+                    }
+                    FileType.TXT -> {
+                        DocumentItem(
+                            id = documentId,
+                            uri = uri,
+                            fileName = fileName,
+                            fileSize = fileSize,
+                            fileType = fileType,
+                            pageCount = 1,
+                            needsUserPageInput = false,
+                            userInputPageCount = 0,
+                            printSettings = PrintSettings(pagesToPrint = PageSelection.ALL)
+                        )
+                    }
+                    FileType.RTF -> {
+                        DocumentItem(
+                            id = documentId,
+                            uri = uri,
+                            fileName = fileName,
+                            fileSize = fileSize,
+                            fileType = fileType,
+                            pageCount = 1,
+                            needsUserPageInput = false,
+                            userInputPageCount = 0,
+                            printSettings = PrintSettings(pagesToPrint = PageSelection.ALL)
                         )
                     }
                 }
@@ -552,7 +646,7 @@ class DocumentUploadViewModel(
                     )
 
                     // Upload document (URL stored in individualDocuments if needed later)
-                    printOrderRepository.uploadDocument(document.uri!!)
+                    printOrderRepository.uploadDocument(document.uri!!, document.fileType, document.fileName)
 
                     // Simplified printSettings - only customBWPages, customColorPages, and copies
                     val printSettingsMap = mapOf(
@@ -633,63 +727,106 @@ class DocumentUploadViewModel(
         // For non-PDF files, skip payment validation and directly upload
         viewModelScope.launch {
             try {
+                Log.d("DocumentUploadVM", "=== submitOrderDirectly: Starting upload ===")
+                Log.d("DocumentUploadVM", "File type: ${_uiState.value.currentFileType}")
+                Log.d("DocumentUploadVM", "Document count: ${_uiState.value.documents.size}")
+                
                 _uiState.value = _uiState.value.copy(isUploading = true, error = null)
 
-                // Upload all documents
-                val individualDocumentsArray = mutableListOf<Map<String, Any>>()
+                // Upload documents to Firebase Storage
+                val uploadedDocuments = mutableListOf<DocumentItem>()
                 val documents = _uiState.value.documents
 
                 for ((index, document) in documents.withIndex()) {
+                    Log.d("DocumentUploadVM", "Processing document ${index + 1}/${documents.size}")
+                    Log.d("DocumentUploadVM", "Document name: ${document.fileName}")
+                    Log.d("DocumentUploadVM", "Document type: ${document.fileType}")
+                    Log.d("DocumentUploadVM", "Document URI: ${document.uri}")
+                    
                     _uiState.value = _uiState.value.copy(
                         uploadProgress = (index.toFloat() / documents.size)
                     )
 
-                    // Upload document (URL stored in individualDocuments if needed later)
-                    printOrderRepository.uploadDocument(document.uri!!)
-
-                    // Simplified printSettings - only customBWPages, customColorPages, and copies
-                    val printSettingsMap = mapOf(
-                        "customBWPages" to document.printSettings.customBWPages,
-                        "customColorPages" to document.printSettings.customColorPages,
-                        "copies" to document.printSettings.copies
-                    )
-
-                    // Individual document data - only fileName, fileType, and printSettings
-                    val docData = mapOf(
-                        "fileName" to document.fileName,
-                        "fileType" to document.fileType.extension,
-                        "printSettings" to printSettingsMap
-                    )
-                    individualDocumentsArray.add(docData)
+                    // Upload document to Firebase Storage
+                    Log.d("DocumentUploadVM", "Calling uploadDocument for: ${document.fileName}")
+                    Log.d("DocumentUploadVM", "URI details - Scheme: ${document.uri?.scheme}, Path: ${document.uri?.path}")
+                    
+                    if (document.uri == null) {
+                        Log.e("DocumentUploadVM", "❌ Document URI is null!")
+                        throw Exception("Document URI is null")
+                    }
+                    
+                    try {
+                        val documentUrl = printOrderRepository.uploadDocument(
+                            document.uri!!, 
+                            document.fileType,
+                            document.fileName
+                        )
+                        Log.d("DocumentUploadVM", "✅ Upload successful for ${document.fileName}, URL: $documentUrl")
+                        // Store the uploaded document with the URL
+                        uploadedDocuments.add(document.copy(uri = Uri.parse(documentUrl)))
+                    } catch (e: Exception) {
+                        Log.e("DocumentUploadVM", "❌ Upload failed for ${document.fileName}", e)
+                        Log.e("DocumentUploadVM", "Error class: ${e.javaClass.name}")
+                        Log.e("DocumentUploadVM", "Error message: ${e.message}")
+                        Log.e("DocumentUploadVM", "Error cause: ${e.cause?.message}")
+                        if (e.message?.contains("Permission", ignoreCase = true) == true) {
+                            Log.e("DocumentUploadVM", "⚠️ PERMISSION ERROR DETECTED!")
+                            Log.e("DocumentUploadVM", "This might be a Firebase Storage rules issue or Android file access issue")
+                        }
+                        throw e
+                    }
                 }
 
-                val order = PrintOrder(
-                    customerId = _uiState.value.customerId,
+                // Create order via Cloud Function (same as PDF files)
+                // For non-PDF files without payment, set totalAmount to 0
+                Log.d("DocumentUploadVM", "Calling Cloud Function to create order...")
+                val cloudFunctionsRepo = CloudFunctionsRepository()
+                val createOrderResult = cloudFunctionsRepo.createOrder(
+                    documents = uploadedDocuments,
+                    totalAmount = 0.0, // Non-PDF files don't require payment
                     customerPhone = _uiState.value.customerPhone,
-                    shopId = _uiState.value.shopId,
-                    fileType = _uiState.value.currentFileType?.extension ?: ".jpg",
-                    individualDocuments = individualDocumentsArray,
-                    documentCount = documents.size,
-                    paymentStatus = com.humblecoders.stationary.data.model.PaymentStatus.PAID // Set as paid
+                    shopId = _uiState.value.shopId
                 )
 
-                val orderId = printOrderRepository.createOrder(order)
-
-                _uiState.value = _uiState.value.copy(
-                    isUploading = false,
-                    orderId = orderId,
-                    uploadProgress = 1f
+                createOrderResult.fold(
+                    onSuccess = { response ->
+                        Log.d("DocumentUploadVM", "✅ Order created successfully: ${response.orderId}")
+                        _uiState.value = _uiState.value.copy(
+                            isUploading = false,
+                            orderId = response.orderId,
+                            uploadProgress = 1f
+                        )
+                        // Clear state and call success callback
+                        clearState()
+                        onOrderCreated()
+                    },
+                    onFailure = { e ->
+                        Log.e("DocumentUploadVM", "❌ Failed to create order via Cloud Function", e)
+                        throw e
+                    }
                 )
-
-                // Clear state and call success callback
-                clearState()
-                onOrderCreated()
 
             } catch (e: Exception) {
-                Log.e("DocumentUploadVM", "Upload failed", e)
+                Log.e("DocumentUploadVM", "=== Upload failed in submitOrderDirectly ===", e)
+                Log.e("DocumentUploadVM", "Error type: ${e.javaClass.name}")
+                Log.e("DocumentUploadVM", "Error message: ${e.message}")
+                Log.e("DocumentUploadVM", "Error cause: ${e.cause}")
+                e.printStackTrace()
+                
+                val errorMessage = when {
+                    e.message?.contains("Permission", ignoreCase = true) == true -> {
+                        "Permission denied: ${e.message}. Please check Firebase Storage rules and file access permissions."
+                    }
+                    e.message?.contains("authentication", ignoreCase = true) == true -> {
+                        "Authentication error: ${e.message}. Please sign in again."
+                    }
+                    else -> "Upload failed: ${e.message ?: "Unknown error"}"
+                }
+                
                 _uiState.value = _uiState.value.copy(
                     isUploading = false,
-                    error = "Upload failed: ${e.message}",
+                    error = errorMessage,
                     uploadProgress = 0f
                 )
             }

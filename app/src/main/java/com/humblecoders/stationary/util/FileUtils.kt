@@ -33,29 +33,77 @@ object FileUtils {
     }
 
 
+    /**
+     * Extract file extension from filename
+     */
+    fun getFileExtension(fileName: String): String {
+        val lastDot = fileName.lastIndexOf('.')
+        return if (lastDot >= 0 && lastDot < fileName.length - 1) {
+            fileName.substring(lastDot).lowercase()
+        } else {
+            ""
+        }
+    }
+
     fun isPptxFile(context: Context, uri: Uri): Boolean {
         val fileName = getFileName(context, uri)
         return fileName.endsWith(".pptx", ignoreCase = true)
     }
 
-    // Update the isValidFile method
-    fun isImageFile(context: Context, uri: Uri): Boolean {
+    fun isPptFile(context: Context, uri: Uri): Boolean {
         val fileName = getFileName(context, uri)
-        return fileName.endsWith(".jpg", ignoreCase = true) ||
-                fileName.endsWith(".jpeg", ignoreCase = true) ||
-                fileName.endsWith(".png", ignoreCase = true) ||
-                fileName.endsWith(".webp", ignoreCase = true)
+        return fileName.endsWith(".ppt", ignoreCase = true)
     }
 
-    // Update the isValidFile method
+    fun isXlsxFile(context: Context, uri: Uri): Boolean {
+        val fileName = getFileName(context, uri)
+        return fileName.endsWith(".xlsx", ignoreCase = true)
+    }
+
+    fun isXlsFile(context: Context, uri: Uri): Boolean {
+        val fileName = getFileName(context, uri)
+        return fileName.endsWith(".xls", ignoreCase = true)
+    }
+
+    fun isDocFile(context: Context, uri: Uri): Boolean {
+        val fileName = getFileName(context, uri)
+        return fileName.endsWith(".doc", ignoreCase = true)
+    }
+
+    fun isTxtFile(context: Context, uri: Uri): Boolean {
+        val fileName = getFileName(context, uri)
+        return fileName.endsWith(".txt", ignoreCase = true)
+    }
+
+    fun isRtfFile(context: Context, uri: Uri): Boolean {
+        val fileName = getFileName(context, uri)
+        return fileName.endsWith(".rtf", ignoreCase = true)
+    }
+
+    // Support all common image types
+    fun isImageFile(context: Context, uri: Uri): Boolean {
+        val fileName = getFileName(context, uri)
+        val extension = getFileExtension(fileName)
+        return extension in listOf(
+            ".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", 
+            ".img", ".heic", ".heif", ".svg", ".ico", ".tiff", ".tif"
+        )
+    }
+
     fun isValidFile(context: Context, uri: Uri): Boolean {
         val fileName = getFileName(context, uri)
         val fileSize = getFileSize(context, uri)
 
-        val isValidFormat = fileName.endsWith(".pdf", ignoreCase = true) ||
-                fileName.endsWith(".docx", ignoreCase = true) ||
-                fileName.endsWith(".pptx", ignoreCase = true) ||
-                isImageFile(context, uri) // Add this line
+        val isValidFormat = isPdfFile(context, uri) ||
+                isDocxFile(context, uri) ||
+                isDocFile(context, uri) ||
+                isPptxFile(context, uri) ||
+                isPptFile(context, uri) ||
+                isXlsxFile(context, uri) ||
+                isXlsFile(context, uri) ||
+                isTxtFile(context, uri) ||
+                isRtfFile(context, uri) ||
+                isImageFile(context, uri)
 
         return isValidFormat &&
                 fileSize > 0 &&

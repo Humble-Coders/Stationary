@@ -23,9 +23,8 @@ data class DocumentItem(
             FileType.PDF -> {
                 if (needsUserPageInput) userInputPageCount else pageCount
             }
-            FileType.DOCX -> 1
-            FileType.PPTX -> 1
-            FileType.IMAGE -> 1
+            FileType.DOCX, FileType.DOC, FileType.PPTX, FileType.PPT, 
+            FileType.XLSX, FileType.XLS, FileType.TXT, FileType.RTF, FileType.IMAGE -> 1
         }
     }
 }
@@ -200,9 +199,29 @@ sealed class PaymentResult {
 enum class FileType(val displayName: String, val extension: String) {
     PDF("PDF Document", ".pdf"),
     DOCX("Word Document", ".docx"),
-    PPTX("PowerPoint Presentation", ".pptx"), // Add this line
-    IMAGE("Image", ".jpg") // Add this line
+    DOC("Word Document (Legacy)", ".doc"),
+    PPTX("PowerPoint Presentation", ".pptx"),
+    PPT("PowerPoint Presentation (Legacy)", ".ppt"),
+    XLSX("Excel Spreadsheet", ".xlsx"),
+    XLS("Excel Spreadsheet (Legacy)", ".xls"),
+    TXT("Text Document", ".txt"),
+    RTF("Rich Text Format", ".rtf"),
+    IMAGE("Image", ""); // Extension will be extracted from filename for images
 
+    companion object {
+        /**
+         * Get file extension from filename for images
+         * Returns the original extension from the filename
+         */
+        fun getImageExtension(fileName: String): String {
+            val lastDot = fileName.lastIndexOf('.')
+            return if (lastDot >= 0 && lastDot < fileName.length - 1) {
+                fileName.substring(lastDot).lowercase()
+            } else {
+                ".jpg" // Default fallback
+            }
+        }
+    }
 }
 
 enum class ShopId(val displayName: String) {

@@ -725,9 +725,11 @@ private fun DocumentCard(
                             Icon(
                                 imageVector = when (document.fileType) {
                                     FileType.PDF -> Icons.Outlined.Description
-                                    FileType.DOCX -> Icons.Default.Description
-                                    FileType.PPTX -> Icons.Default.Description
-                                    FileType.IMAGE -> Icons.Default.Description // Use same icon for images
+                                    FileType.DOCX, FileType.DOC -> Icons.Default.Description
+                                    FileType.PPTX, FileType.PPT -> Icons.Default.Description
+                                    FileType.XLSX, FileType.XLS -> Icons.Default.Description
+                                    FileType.TXT, FileType.RTF -> Icons.Default.Description
+                                    FileType.IMAGE -> Icons.Default.Description
                                 },
                                 contentDescription = null,
                                 modifier = Modifier.size(30.dp),
@@ -753,8 +755,14 @@ private fun DocumentCard(
                         val info = when (document.fileType) {
                             FileType.PDF -> "${formatFileSize(document.fileSize)} • ${document.getEffectivePageCount()} pages"
                             FileType.DOCX -> "${formatFileSize(document.fileSize)} • Word Document"
+                            FileType.DOC -> "${formatFileSize(document.fileSize)} • Word Document (Legacy)"
                             FileType.PPTX -> "${formatFileSize(document.fileSize)} • PowerPoint Presentation"
-                            FileType.IMAGE -> "${formatFileSize(document.fileSize)} • Image File" // Add this line
+                            FileType.PPT -> "${formatFileSize(document.fileSize)} • PowerPoint Presentation (Legacy)"
+                            FileType.XLSX -> "${formatFileSize(document.fileSize)} • Excel Spreadsheet"
+                            FileType.XLS -> "${formatFileSize(document.fileSize)} • Excel Spreadsheet (Legacy)"
+                            FileType.TXT -> "${formatFileSize(document.fileSize)} • Text Document"
+                            FileType.RTF -> "${formatFileSize(document.fileSize)} • Rich Text Format"
+                            FileType.IMAGE -> "${formatFileSize(document.fileSize)} • Image File"
                         }
 
                         Text(
@@ -852,8 +860,9 @@ private fun PrintSettingsPanel(
                 maxPages = document.getEffectivePageCount(),
                 onSettingsChange = onSettingsChange
             )
-        } else if (fileType == FileType.DOCX || fileType == FileType.PPTX) { // Update this condition
-            // For DOCX and PPTX files only, show traditional color mode selection
+        } else if (fileType in listOf(FileType.DOCX, FileType.DOC, FileType.PPTX, FileType.PPT, 
+                FileType.XLSX, FileType.XLS, FileType.TXT, FileType.RTF)) {
+            // For document files, show traditional color mode selection
             TraditionalColorModeSection(
                 settings = settings,
                 onSettingsChange = onSettingsChange
