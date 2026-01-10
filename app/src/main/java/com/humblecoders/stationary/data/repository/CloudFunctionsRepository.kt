@@ -51,7 +51,7 @@ class CloudFunctionsRepository {
                     "customBWPages" to doc.printSettings.customBWPages,
                     "customColorPages" to doc.printSettings.customColorPages,
                     "copies" to doc.printSettings.copies,
-                    "printOnBothSides" to doc.printSettings.printOnBothSides
+                    "printOnBothSides" to if (doc.printSettings.printOnBothSides) "true" else "false"
                 )
 
                 // Individual document data - fileName, fileType, fileUrl, and printSettings

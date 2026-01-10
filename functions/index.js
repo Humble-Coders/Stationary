@@ -239,7 +239,8 @@ exports.createOrder = onCall(async (request) => {
           customBWPages: doc.printSettings.customBWPages || "",
           customColorPages: doc.printSettings.customColorPages || "",
           copies: doc.printSettings.copies || 1,
-          printOnBothSides: doc.printSettings.printOnBothSides || false,
+          printOnBothSides: (doc.printSettings.printOnBothSides || false) ?
+            "true" : "false",
         },
       };
     });
