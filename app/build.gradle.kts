@@ -61,6 +61,7 @@ dependencies {
     implementation(libs.firebase.storage.ktx)
     implementation(libs.firebase.analytics.ktx)
     implementation(libs.firebase.auth.ktx)
+    implementation("com.google.firebase:firebase-messaging")
 
     // Navigation
     implementation("androidx.navigation:navigation-compose:2.7.6")

@@ -1,4 +1,5 @@
 const {onCall} = require("firebase-functions/v2/https");
+const {onDocumentUpdated} = require("firebase-functions/v2/firestore");
 const {setGlobalOptions} = require("firebase-functions/v2");
 const admin = require("firebase-admin");
 const Razorpay = require("razorpay");
@@ -525,3 +526,94 @@ exports.checkOrderStatus = onCall(async (request) => {
     throw error;
   }
 });
+
+// ============================================
+// CLOUD FUNCTION 5: SEND FCM NOTIFICATION ON ORDER STATUS CHANGE
+// ============================================
+
+exports.onOrderStatusChanged = onDocumentUpdated(
+    "print_orders/{orderId}",
+    async (event) => {
+      try {
+        const beforeData = event.data.before.data();
+        const afterData = event.data.after.data();
+
+        // Check if orderStatus changed to PRINTED
+        if (
+          beforeData.orderStatus !== "PRINTED" &&
+          afterData.orderStatus === "PRINTED"
+        ) {
+          console.log("Order status changed to PRINTED:", event.params.orderId);
+          console.log("Customer ID:", afterData.customerId);
+
+          const customerId = afterData.customerId;
+          const orderId = afterData.orderId || event.params.orderId;
+
+          if (!customerId) {
+            console.error("Customer ID not found in order");
+            return;
+          }
+
+          // Get user's FCM token
+          const userDoc = await db.collection("users")
+              .doc(customerId)
+              .get();
+
+          if (!userDoc.exists) {
+            console.error("User document not found:", customerId);
+            return;
+          }
+
+          const latestFcmToken = userDoc.data().latestFcmToken;
+
+          if (!latestFcmToken) {
+            console.warn("No FCM token found for user:", customerId);
+            return;
+          }
+
+          console.log("Sending notification to token:", latestFcmToken);
+
+          // Prepare notification message
+          const message = {
+            notification: {
+              title: "Order Printed! 🎉",
+              body: `Your order ${orderId} has been printed ` +
+                  `and is ready for pickup.`,
+            },
+            data: {
+              orderId: orderId,
+              orderStatus: "PRINTED",
+              type: "order_status_update",
+            },
+            token: latestFcmToken,
+            android: {
+              priority: "high",
+              notification: {
+                sound: "default",
+                channelId: "order_notifications",
+              },
+            },
+          };
+
+          // Send notification
+          const response = await admin.messaging().send(message);
+          console.log("Successfully sent notification:", response);
+
+          // Log notification sent
+          await db.collection("notifications").add({
+            userId: customerId,
+            orderId: orderId,
+            type: "order_printed",
+            title: message.notification.title,
+            body: message.notification.body,
+            sentAt: admin.firestore.FieldValue.serverTimestamp(),
+            fcmToken: latestFcmToken,
+          });
+        }
+      } catch (error) {
+        console.error("Error in onOrderStatusChanged:", error);
+        console.error("Error stack:", error.stack);
+        // Don't throw - we don't want to fail the order update
+      }
+    },
+);

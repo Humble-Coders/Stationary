@@ -1,13 +1,17 @@
 package com.humblecoders.stationary
 
 import StationaryTheme
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.navigation.NavHostController
@@ -15,13 +19,18 @@ import androidx.navigation.compose.ComposeNavigator
 import androidx.navigation.compose.DialogNavigator
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.storage.FirebaseStorage
 import com.humblecoders.stationary.data.repository.BugReportRepository
+import com.humblecoders.stationary.data.repository.FCMTokenRepository
 import com.humblecoders.stationary.data.repository.FirebaseAuthRepository
 import com.humblecoders.stationary.data.repository.PrintOrderRepository
 import com.humblecoders.stationary.data.repository.ProfileRepository
 import com.humblecoders.stationary.data.repository.ShopSettingsRepository
 import com.humblecoders.stationary.data.service.RazorpayService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import com.humblecoders.stationary.navigation.PrintShopNavigation
 import com.humblecoders.stationary.ui.viewmodel.*
 import com.humblecoders.stationary.ui.viewmodel.auth.LoginViewModel
@@ -51,6 +60,8 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
     private lateinit var paymentViewModel: PaymentViewModel
 
     private lateinit var googleSignInLauncher: ActivityResultLauncher<Intent>
+    private lateinit var notificationPermissionLauncher: ActivityResultLauncher<String>
+    private lateinit var fcmTokenRepository: FCMTokenRepository
 
     lateinit var razorpayService: RazorpayService
         private set
@@ -60,9 +71,13 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
         initializeFirebase()
         initializeRepositories()
         initializeGoogleSignInLauncher()
+        initializeNotificationPermissionLauncher()
         initializeRazorpayService()
         initializeViewModels()
         logAuthState()
+        setupAuthStateListener()
+        requestNotificationPermission()
+        initializeFCM()
 
         setContent {
             StationaryTheme {
@@ -161,12 +176,23 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
         }
     }
 
+    private fun setupAuthStateListener() {
+        firebaseAuth.addAuthStateListener { auth ->
+            val user = auth.currentUser
+            if (user != null) {
+                // Try to get and save FCM token when user logs in
+                initializeFCM()
+            }
+        }
+    }
+
     private fun initializeRepositories() {
         authRepository = FirebaseAuthRepository(firebaseAuth, this)
         profileRepository = ProfileRepository(firebaseAuth, firestore, this)
         printOrderRepository = PrintOrderRepository(firestore, storage)
         shopSettingsRepository = ShopSettingsRepository(firestore)
         bugReportRepository = BugReportRepository(firestore, storage)
+        fcmTokenRepository = FCMTokenRepository()
     }
 
     private fun initializeRazorpayService() {
@@ -198,6 +224,61 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                     registerViewModel.cancelGoogleSignIn()
                     loginViewModel.clearGoogleSignInState()
                     registerViewModel.clearGoogleSignInState()
+                }
+            }
+        }
+    }
+
+    companion object {
+        private const val TAG = "FCMService"
+    }
+
+    private fun initializeNotificationPermissionLauncher() {
+        notificationPermissionLauncher = registerForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { isGranted ->
+            if (isGranted) {
+                initializeFCM()
+            }
+        }
+    }
+
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            when {
+                ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED -> {
+                    // Permission already granted
+                }
+                else -> {
+                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
+        }
+    }
+
+    private fun initializeFCM() {
+        val currentUser = firebaseAuth.currentUser
+        if (currentUser == null) {
+            return
+        }
+
+        FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+            if (!task.isSuccessful) {
+                Log.w(TAG, "Failed to get FCM token", task.exception)
+                return@addOnCompleteListener
+            }
+
+            val token = task.result
+            if (token != null) {
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        fcmTokenRepository.saveToken(token)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error saving FCM token", e)
+                    }
                 }
             }
         }
