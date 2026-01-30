@@ -2,16 +2,22 @@ package com.humblecoders.stationary.navigation
 
 import android.app.Activity
 import android.content.Intent
+import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.google.firebase.auth.FirebaseAuth
+import com.humblecoders.stationary.SharedFilesData
 import com.humblecoders.stationary.ui.screen.*
 import com.humblecoders.stationary.ui.screen.auth.LoginScreen
 import com.humblecoders.stationary.ui.screen.auth.RegisterScreen
@@ -29,6 +35,8 @@ sealed class Screen(val route: String) {
     
     object ActiveOrders : Screen("active_orders")
 
+    object ShopSelection : Screen("shop_selection")
+
     object DocumentUpload : Screen("document_upload/{shopId}") {
         fun createRoute(shopId: String) = "document_upload/$shopId"
     }
@@ -45,13 +53,38 @@ fun PrintShopNavigation(
     registerViewModel: RegisterViewModel,
     profileViewModel: ProfileViewModel,
     activity: Activity,
-    googleSignInLauncher: ActivityResultLauncher<Intent>
+    googleSignInLauncher: ActivityResultLauncher<Intent>,
+    sharedFilesData: SharedFilesData? = null,
+    onSharedFilesHandled: () -> Unit = {}
 ) {
     // Check if user is already logged in
     val startDestination = if (FirebaseAuth.getInstance().currentUser != null) {
         Screen.Home.route
     } else {
         Screen.Login.route
+    }
+
+    // Track shared files to pass to DocumentUploadScreen
+    var pendingSharedFiles by remember { mutableStateOf<List<Uri>?>(null) }
+    // Flag to prevent double navigation to shop selection
+    var hasNavigatedToShopSelection by remember { mutableStateOf(false) }
+
+    // Navigate to shop selection when shared files are received and user is logged in
+    LaunchedEffect(sharedFilesData) {
+        if (sharedFilesData != null && sharedFilesData.uris.isNotEmpty()) {
+            // Reset flag when new shared files arrive
+            hasNavigatedToShopSelection = false
+            pendingSharedFiles = sharedFilesData.uris
+            
+            val currentUser = FirebaseAuth.getInstance().currentUser
+            if (currentUser != null) {
+                // User is logged in, navigate to shop selection
+                hasNavigatedToShopSelection = true
+                navController.navigate(Screen.ShopSelection.route)
+            }
+            // If user not logged in, they'll need to login first
+            // The HomeScreen LaunchedEffect will handle navigation after login
+        }
     }
 
     NavHost(
@@ -105,6 +138,16 @@ fun PrintShopNavigation(
                 }
             }
 
+            // Check if we have pending shared files after login (handles case when user was not logged in)
+            LaunchedEffect(pendingSharedFiles, hasNavigatedToShopSelection) {
+                if (pendingSharedFiles != null && 
+                    !hasNavigatedToShopSelection && 
+                    FirebaseAuth.getInstance().currentUser != null) {
+                    hasNavigatedToShopSelection = true
+                    navController.navigate(Screen.ShopSelection.route)
+                }
+            }
+
             HomeScreen(
                 homeViewModel = homeViewModel,
                 onNavigateToUpload = { shopId ->
@@ -122,6 +165,28 @@ fun PrintShopNavigation(
             )
         }
 
+        // Shop Selection Screen for shared files
+        composable(Screen.ShopSelection.route) {
+            ShopSelectionScreen(
+                homeViewModel = homeViewModel,
+                sharedFileCount = pendingSharedFiles?.size ?: 0,
+                onShopSelected = { shopId ->
+                    // Reset flag after navigating to document upload
+                    hasNavigatedToShopSelection = false
+                    navController.navigate(Screen.DocumentUpload.createRoute(shopId)) {
+                        popUpTo(Screen.ShopSelection.route) { inclusive = true }
+                    }
+                },
+                onNavigateBack = {
+                    // Clear state and reset flag when user cancels
+                    pendingSharedFiles = null
+                    hasNavigatedToShopSelection = false
+                    onSharedFilesHandled()
+                    navController.popBackStack()
+                }
+            )
+        }
+
         composable(
             route = Screen.DocumentUpload.route,
             arguments = listOf(
@@ -131,12 +196,21 @@ fun PrintShopNavigation(
             )
         ) { backStackEntry ->
             val shopId = backStackEntry.arguments?.getString("shopId") ?: ""
+            
+            // Capture shared files and clear them
+            val filesToLoad = remember(pendingSharedFiles) { pendingSharedFiles }
+            
             DocumentUploadScreen(
                 viewModel = documentUploadViewModel,
                 paymentViewModel = paymentViewModel,
                 activity = activity as ComponentActivity,
                 shopId = shopId,
+                sharedFiles = filesToLoad,
                 onNavigateBack = {
+                    // Clear shared files and reset flag when navigating back
+                    pendingSharedFiles = null
+                    hasNavigatedToShopSelection = false
+                    onSharedFilesHandled()
                     navController.popBackStack()
                 }
             )

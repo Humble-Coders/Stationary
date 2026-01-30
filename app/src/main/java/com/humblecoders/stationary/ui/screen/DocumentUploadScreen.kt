@@ -72,6 +72,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -119,16 +120,27 @@ fun DocumentUploadScreen(
     paymentViewModel: PaymentViewModel,
     activity: ComponentActivity,
     shopId: String,
+    sharedFiles: List<Uri>? = null,
     onNavigateBack: () -> Unit
 ) {
+    val context = LocalContext.current
+    
     // Set shopId when screen is loaded
     LaunchedEffect(shopId) {
         viewModel.setShopId(shopId)
     }
 
+    // Load shared files when screen appears (from external share intent)
+    LaunchedEffect(sharedFiles, shopId) {
+        if (sharedFiles != null && sharedFiles.isNotEmpty()) {
+            // Small delay to ensure ViewModel is ready with shop settings
+            kotlinx.coroutines.delay(200)
+            viewModel.selectFiles(context, sharedFiles)
+        }
+    }
+
     val uiState by viewModel.uiState.collectAsState()
     val paymentState by paymentViewModel.uiState.collectAsState()
-    val context = LocalContext.current
 
     var showSuccessDialog by remember { mutableStateOf(false) }
 
@@ -200,6 +212,16 @@ fun DocumentUploadScreen(
         }
     }
 
+    // Handle document/file errors (including invalid shared files)
+    LaunchedEffect(uiState.error) {
+        uiState.error?.let { error ->
+            Log.e("DocumentUploadScreen", "Document error: $error")
+            Toast.makeText(context, error, Toast.LENGTH_LONG).show()
+            // Clear error after showing to prevent re-displaying
+            viewModel.clearError()
+        }
+    }
+
     // Handle non-PDF upload success
     var previousOrderId by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(uiState.orderId, uiState.isUploading) {
@@ -222,13 +244,18 @@ fun DocumentUploadScreen(
         }
     }
 
-    // Show upload screen if no documents
+    // Show upload screen if no documents, or loading state
     if (uiState.documents.isEmpty()) {
-        UploadScreen(
-            isShopOpen = uiState.isShopOpen,
-            onBackPressed = onNavigateBack,
-            onUploadClick = { multipleFilePickerLauncher.launch("*/*") }
-        )
+        if (uiState.isLoadingFiles) {
+            // Show loading state when files are being processed
+            LoadingFilesScreen(onBackPressed = onNavigateBack)
+        } else {
+            UploadScreen(
+                isShopOpen = uiState.isShopOpen,
+                onBackPressed = onNavigateBack,
+                onUploadClick = { multipleFilePickerLauncher.launch("*/*") }
+            )
+        }
     } else {
         // Show documents with settings
         DocumentsScreen(
@@ -368,6 +395,91 @@ private fun PaymentSuccessDialog() {
                     modifier = Modifier.size(32.dp),
                     color = SuccessGreen,
                     strokeWidth = 3.dp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LoadingFilesScreen(
+    onBackPressed: () -> Unit
+) {
+    Scaffold(
+        topBar = {
+            Surface(
+                color = CardWhite,
+                shadowElevation = 2.dp
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onBackPressed) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = TextPrimary
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "Upload Documents",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+                }
+            }
+        }
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(BackgroundGray)
+                .padding(paddingValues),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                // Loading indicator
+                Surface(
+                    shape = RoundedCornerShape(24.dp),
+                    color = BlueBtn.copy(alpha = 0.1f),
+                    modifier = Modifier.size(120.dp)
+                ) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(48.dp),
+                            color = BlueBtn,
+                            strokeWidth = 4.dp
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(24.dp))
+
+                Text(
+                    text = "Loading files...",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary
+                )
+
+                Spacer(Modifier.height(8.dp))
+
+                Text(
+                    text = "Please wait while we process your files",
+                    fontSize = 14.sp,
+                    color = TextSecondary,
+                    textAlign = TextAlign.Center
                 )
             }
         }
@@ -524,6 +636,7 @@ private fun DocumentsScreen(
     // PDF files use pager, non-PDF files use lazy column
     val isPdfFiles = uiState.currentFileType == FileType.PDF
     val pagerState = if (isPdfFiles) rememberPagerState(pageCount = { uiState.documents.size }) else null
+    val coroutineScope = rememberCoroutineScope()
 
     Scaffold(
         topBar = {
@@ -600,7 +713,7 @@ private fun DocumentsScreen(
                             IconButton(
                                 onClick = {
                                     val prevPage = (pagerState.currentPage - 1).coerceAtLeast(0)
-                                    kotlinx.coroutines.MainScope().launch {
+                                    coroutineScope.launch {
                                         pagerState.animateScrollToPage(prevPage)
                                     }
                                 },
@@ -632,7 +745,7 @@ private fun DocumentsScreen(
                             IconButton(
                                 onClick = {
                                     val nextPage = (pagerState.currentPage + 1).coerceAtMost(uiState.documents.size - 1)
-                                    kotlinx.coroutines.MainScope().launch {
+                                    coroutineScope.launch {
                                         pagerState.animateScrollToPage(nextPage)
                                     }
                                 },
@@ -666,67 +779,62 @@ private fun DocumentsScreen(
             }
         }
     ) { paddingValues ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .background(BackgroundGray)
                 .padding(paddingValues)
         ) {
-            Column(
-                modifier = Modifier.fillMaxSize()
-            ) {
-                if (isPdfFiles && pagerState != null) {
-                    // Horizontal pager for PDF documents
-                    HorizontalPager(
-                        state = pagerState,
+            if (isPdfFiles && pagerState != null) {
+                // Horizontal pager for PDF documents
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                ) { page ->
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(1f)
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
-                    ) { page ->
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .verticalScroll(rememberScrollState())
-                        ) {
-                            DocumentCard(
-                                document = uiState.documents[page],
-                                pricePerPage = uiState.pricePerPage,
-                                isProcessing = uiState.isUploading || paymentState.isProcessing,
-                                onRemove = { onRemoveDocument(uiState.documents[page].id) },
-                                onUpdateSettings = { settings ->
-                                    onUpdateSettings(uiState.documents[page].id, settings)
-                                },
-                                onUpdatePageCount = { pageCount ->
-                                    onUpdatePageCount(uiState.documents[page].id, pageCount)
-                                }
-                            )
-                        }
-                    }
-                } else {
-                    // Lazy column for non-PDF documents
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                            .verticalScroll(rememberScrollState())
                     ) {
-                        items(uiState.documents, key = { it.id }) { document ->
-                            NonPdfDocumentCard(
-                                document = document,
-                                isProcessing = uiState.isUploading || paymentState.isProcessing,
-                                onRemove = { onRemoveDocument(document.id) }
-                            )
-                        }
+                        DocumentCard(
+                            document = uiState.documents[page],
+                            pricePerPage = uiState.pricePerPage,
+                            isProcessing = uiState.isUploading || paymentState.isProcessing,
+                            onRemove = { onRemoveDocument(uiState.documents[page].id) },
+                            onUpdateSettings = { settings ->
+                                onUpdateSettings(uiState.documents[page].id, settings)
+                            },
+                            onUpdatePageCount = { pageCount ->
+                                onUpdatePageCount(uiState.documents[page].id, pageCount)
+                            }
+                        )
+                    }
+                }
+            } else {
+                // Lazy column for non-PDF documents
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(uiState.documents, key = { it.id }) { document ->
+                        NonPdfDocumentCard(
+                            document = document,
+                            isProcessing = uiState.isUploading || paymentState.isProcessing,
+                            onRemove = { onRemoveDocument(document.id) }
+                        )
                     }
                 }
             }
 
             // Bottom payment section
             Surface(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth(),
                 color = CardWhite,
                 shadowElevation = 8.dp
             ) {
@@ -1201,7 +1309,7 @@ private fun DocumentCard(
         }
         
         // Spacer to allow scrolling to see number of copies
-        Spacer(Modifier.height(240.dp))
+        Spacer(Modifier.height(48.dp))
     }
 }
 

@@ -4,6 +4,7 @@ import StationaryTheme
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -13,6 +14,7 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.ComposeNavigator
@@ -40,6 +42,12 @@ import com.razorpay.PaymentData
 import com.razorpay.PaymentResultWithDataListener
 import org.json.JSONObject
 
+// Data class to hold shared files information
+data class SharedFilesData(
+    val uris: List<Uri>,
+    val handled: Boolean = false
+)
+
 class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
 
     private lateinit var firebaseAuth: FirebaseAuth
@@ -66,6 +74,9 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
     lateinit var razorpayService: RazorpayService
         private set
 
+    // Holds shared files from external apps
+    private var sharedFilesData = mutableStateOf<SharedFilesData?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         initializeFirebase()
@@ -79,11 +90,81 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
         requestNotificationPermission()
         initializeFCM()
 
+        // Handle share intent if app was opened via share
+        handleShareIntent(intent)
+
         setContent {
             StationaryTheme {
                 PrintShopApp()
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleShareIntent(intent)
+    }
+
+    private fun handleShareIntent(intent: Intent?) {
+        if (intent == null) return
+
+        when (intent.action) {
+            Intent.ACTION_SEND -> {
+                @Suppress("DEPRECATION")
+                val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                } else {
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM)
+                }
+                if (uri != null) {
+                    // Take read permission to prevent expiration
+                    takeUriPermission(uri)
+                    Log.d("MainActivity", "Received shared file: $uri")
+                    sharedFilesData.value = SharedFilesData(listOf(uri))
+                }
+            }
+            Intent.ACTION_SEND_MULTIPLE -> {
+                @Suppress("DEPRECATION")
+                val uris = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                } else {
+                    intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM)
+                }
+                if (!uris.isNullOrEmpty()) {
+                    // Take read permission for all URIs to prevent expiration
+                    uris.forEach { uri -> takeUriPermission(uri) }
+                    Log.d("MainActivity", "Received ${uris.size} shared files")
+                    sharedFilesData.value = SharedFilesData(uris)
+                }
+            }
+        }
+    }
+
+    private fun takeUriPermission(uri: Uri) {
+        try {
+            // Try to take persistable permission first (for content providers that support it)
+            contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+            Log.d("MainActivity", "Took persistent permission for: $uri")
+        } catch (e: SecurityException) {
+            // Permission might not be persistable, that's okay
+            // The temporary permission from the intent should still work
+            Log.w("MainActivity", "Could not take persistent permission (this is normal): ${e.message}")
+        }
+    }
+
+    // Get shared files and mark as handled
+    fun getSharedFiles(): SharedFilesData? {
+        val data = sharedFilesData.value
+        return data
+    }
+
+    // Clear shared files after they've been processed
+    fun clearSharedFiles() {
+        sharedFilesData.value = null
     }
 
     override fun onPaymentSuccess(razorpayPaymentId: String?, paymentData: PaymentData?) {
@@ -302,6 +383,9 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
             }
         }
 
+        // Get shared files state
+        val sharedFiles = sharedFilesData.value
+
         PrintShopNavigation(
             navController = navController,
             homeViewModel = homeViewModel,
@@ -312,6 +396,8 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
             profileViewModel = profileViewModel,
             activity = this@MainActivity,
             googleSignInLauncher = googleSignInLauncher,
+            sharedFilesData = sharedFiles,
+            onSharedFilesHandled = { clearSharedFiles() }
         )
     }
 }

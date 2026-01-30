@@ -350,7 +350,6 @@ fun ShopClosedCard(
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
         shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
         modifier = modifier
     ) {
         Column(
@@ -386,37 +385,14 @@ fun ShopClosedCard(
             )
 
             Text(
-                text = "We're currently closed for service. Please check back during our operating hours or contact support for assistance.",
+                text = "We're currently closed for service. Please check back during our operating hours.",
                 fontSize = 14.sp,
                 color = MaterialTheme.colorScheme.onErrorContainer,
                 textAlign = TextAlign.Center
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
 
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedButton(
-                    onClick = { /* Contact support */ },
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    )
-                ) {
-                    Text("Contact Support")
-                }
 
-                Button(
-                    onClick = { /* View hours */ },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                        contentColor = MaterialTheme.colorScheme.onError
-                    )
-                ) {
-                    Text("View Hours")
-                }
-            }
         }
     }
 }

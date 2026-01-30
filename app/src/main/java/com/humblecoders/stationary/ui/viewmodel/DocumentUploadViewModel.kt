@@ -35,6 +35,7 @@ data class DocumentUploadUiState(
     val documents: List<DocumentItem> = emptyList(),
     val totalCalculatedPrice: Double = 0.0,
     val isUploading: Boolean = false,
+    val isLoadingFiles: Boolean = false, // Loading state for when files are being processed
     val isShopOpen: Boolean = true,
     val uploadProgress: Float = 0f,
     val error: String? = null,
@@ -213,7 +214,7 @@ class DocumentUploadViewModel(
 
         viewModelScope.launch {
             try {
-                _uiState.value = _uiState.value.copy(error = null)
+                _uiState.value = _uiState.value.copy(error = null, isLoadingFiles = true)
 
                 // Determine file type from first file
                 val firstUri = uris.first()
@@ -229,7 +230,7 @@ class DocumentUploadViewModel(
                     FileUtils.isRtfFile(context, firstUri) -> FileType.RTF
                     FileUtils.isImageFile(context, firstUri) -> FileType.IMAGE
                     else -> {
-                        _uiState.value = _uiState.value.copy(error = "Unsupported file format")
+                        _uiState.value = _uiState.value.copy(error = "Unsupported file format", isLoadingFiles = false)
                         return@launch
                     }
                 }
@@ -238,7 +239,8 @@ class DocumentUploadViewModel(
                 val currentDocuments = _uiState.value.documents
                 if (currentDocuments.isNotEmpty() && _uiState.value.currentFileType != detectedFileType) {
                     _uiState.value = _uiState.value.copy(
-                        error = "Cannot mix file types. Please upload only ${_uiState.value.currentFileType?.displayName} files."
+                        error = "Cannot mix file types. Please upload only ${_uiState.value.currentFileType?.displayName} files.",
+                        isLoadingFiles = false
                     )
                     return@launch
                 }
@@ -246,7 +248,8 @@ class DocumentUploadViewModel(
                 // Check maximum document limit
                 if (currentDocuments.size + uris.size > MAX_DOCUMENTS) {
                     _uiState.value = _uiState.value.copy(
-                        error = "Maximum $MAX_DOCUMENTS documents allowed. You can add ${MAX_DOCUMENTS - currentDocuments.size} more."
+                        error = "Maximum $MAX_DOCUMENTS documents allowed. You can add ${MAX_DOCUMENTS - currentDocuments.size} more.",
+                        isLoadingFiles = false
                     )
                     return@launch
                 }
@@ -268,7 +271,8 @@ class DocumentUploadViewModel(
 
                 if (invalidFiles.isNotEmpty()) {
                     _uiState.value = _uiState.value.copy(
-                        error = "All files must be ${detectedFileType.displayName} files"
+                        error = "All files must be ${detectedFileType.displayName} files",
+                        isLoadingFiles = false
                     )
                     return@launch
                 }
@@ -279,7 +283,8 @@ class DocumentUploadViewModel(
                 for (uri in uris) {
                     if (!FileUtils.isValidFile(context, uri)) {
                         _uiState.value = _uiState.value.copy(
-                            error = "Invalid file: ${FileUtils.getFileName(context, uri)}"
+                            error = "Invalid file: ${FileUtils.getFileName(context, uri)}",
+                            isLoadingFiles = false
                         )
                         return@launch
                     }
@@ -295,14 +300,15 @@ class DocumentUploadViewModel(
                 _uiState.value = _uiState.value.copy(
                     currentFileType = detectedFileType,
                     documents = updatedDocuments,
-                    canAddMoreFiles = updatedDocuments.size < MAX_DOCUMENTS
+                    canAddMoreFiles = updatedDocuments.size < MAX_DOCUMENTS,
+                    isLoadingFiles = false
                 )
 
                 recalculateTotalPrice()
 
             } catch (e: Exception) {
                 Log.e("DocumentUploadVM", "Error selecting files", e)
-                _uiState.value = _uiState.value.copy(error = "Error processing files: ${e.message}")
+                _uiState.value = _uiState.value.copy(error = "Error processing files: ${e.message}", isLoadingFiles = false)
             }
         }
     }
@@ -759,6 +765,10 @@ class DocumentUploadViewModel(
             isShopOpen = _uiState.value.isShopOpen,
             pricePerPage = _uiState.value.pricePerPage
         )
+    }
+
+    fun clearError() {
+        _uiState.value = _uiState.value.copy(error = null)
     }
     
     fun clearAllUserData() {

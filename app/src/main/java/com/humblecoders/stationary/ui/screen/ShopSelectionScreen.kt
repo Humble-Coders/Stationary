@@ -1,31 +1,15 @@
 package com.humblecoders.stationary.ui.screen
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Print
-import androidx.compose.material.icons.filled.ShoppingBag
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Store
-import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Print
-import androidx.compose.material.pullrefresh.PullRefreshIndicator
-import androidx.compose.material.pullrefresh.pullRefresh
-import androidx.compose.material.pullrefresh.rememberPullRefreshState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,13 +20,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.humblecoders.stationary.data.model.PrintOrder
-import com.humblecoders.stationary.data.model.ShopId
 import com.humblecoders.stationary.data.model.PricePerPage
+import com.humblecoders.stationary.data.model.ShopId
 import com.humblecoders.stationary.ui.viewmodel.HomeViewModel
-import kotlinx.coroutines.launch
 
-// Modern color palette
+// Modern color palette (same as HomeScreen)
 private val BlueBtn = Color(0xFF3B82F6)
 private val BackgroundGray = Color(0xFFF9FAFB)
 private val CardWhite = Color.White
@@ -52,32 +34,15 @@ private val BorderGray = Color(0xFFE5E7EB)
 private val SuccessGreen = Color(0xFF10B981)
 private val ErrorRed = Color(0xFFEF4444)
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(
+fun ShopSelectionScreen(
     homeViewModel: HomeViewModel,
-    onNavigateToUpload: (String) -> Unit,
-    onNavigateToOrderHistory: () -> Unit,
-    onNavigateToProfile: () -> Unit,
-    onNavigateToActiveOrders: () -> Unit = {}
+    sharedFileCount: Int,
+    onShopSelected: (String) -> Unit,
+    onNavigateBack: () -> Unit
 ) {
     val homeUiState by homeViewModel.uiState.collectAsState()
-    val coroutineScope = rememberCoroutineScope()
-
-    // Filter orders to show only SUBMITTED and QUEUED
-    val activeOrders = homeUiState.orders.filter { order ->
-        order.orderStatus.toString() == "SUBMITTED" ||
-                order.orderStatus.toString() == "QUEUED"
-    }
-
-    val pullRefreshState = rememberPullRefreshState(
-        refreshing = homeUiState.isLoading,
-        onRefresh = {
-            coroutineScope.launch {
-                homeViewModel.refreshOrders()
-            }
-        }
-    )
 
     Scaffold(
         topBar = {
@@ -85,231 +50,135 @@ fun HomeScreen(
                 color = CardWhite,
                 shadowElevation = 2.dp
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(horizontal = 16.dp, vertical = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column {
+                TopAppBar(
+                    title = {
                         Text(
-                            text = "Print Shop",
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary
+                            text = "Select Shop",
+                            fontWeight = FontWeight.Bold
                         )
-                        Text(
-                            text = "Select a shop to start printing",
-                            fontSize = 14.sp,
-                            color = TextSecondary
-                        )
-                    }
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        IconButton(
-                            onClick = onNavigateToOrderHistory,
-                            modifier = Modifier.size(40.dp)
-                        ) {
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onNavigateBack) {
                             Icon(
-                                imageVector = Icons.Outlined.History,
-                                contentDescription = "Order History",
-                                tint = TextSecondary
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back"
                             )
                         }
-
-                        IconButton(
-                            onClick = onNavigateToProfile,
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Person,
-                                contentDescription = "Profile",
-                                tint = TextSecondary
-                            )
-                        }
-                    }
-                }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = CardWhite
+                    )
+                )
             }
         },
         containerColor = BackgroundGray
     ) { paddingValues ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .pullRefresh(pullRefreshState)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+            // Shared files info card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = BlueBtn.copy(alpha = 0.1f)
+                )
             ) {
-                // Active orders notification bar
-                if (activeOrders.isNotEmpty()) {
-                    ActiveOrdersBar(
-                        orderCount = activeOrders.size,
-                        onClick = onNavigateToActiveOrders
-                    )
-                }
-
-                // Shop cards section
-                Text(
-                    text = "Available Shops",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TextPrimary
-                )
-
-                // GBlock Shop Card
-                ShopCard(
-                    shopName = ShopId.GBLOCK.displayName,
-                    shopId = ShopId.GBLOCK.name,
-                    isOpen = homeUiState.isGBlockShopOpen,
-                    pricePerPage = homeUiState.gblockPricePerPage,
-                    onSelectShop = { onNavigateToUpload(ShopId.GBLOCK.name) }
-                )
-
-                // COS Shop Card
-                ShopCard(
-                    shopName = ShopId.COS.displayName,
-                    shopId = ShopId.COS.name,
-                    isOpen = homeUiState.isCosShopOpen,
-                    pricePerPage = homeUiState.cosPricePerPage,
-                    onSelectShop = { onNavigateToUpload(ShopId.COS.name) }
-                )
-
-                // Loading indicator
-                if (homeUiState.isLoading && activeOrders.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(32.dp),
-                        contentAlignment = Alignment.Center
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = BlueBtn.copy(alpha = 0.2f),
+                        modifier = Modifier.size(48.dp)
                     ) {
-                        CircularProgressIndicator(
-                            color = BlueBtn,
-                            strokeWidth = 3.dp
-                        )
-                    }
-                }
-
-                // Error display
-                homeUiState.error?.let { error ->
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer
-                        ),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                Icons.Outlined.Info,
-                                contentDescription = "Error",
-                                tint = MaterialTheme.colorScheme.error,
+                                imageVector = Icons.Default.Description,
+                                contentDescription = null,
+                                tint = BlueBtn,
                                 modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            Text(
-                                text = error,
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                                fontSize = 14.sp
                             )
                         }
                     }
-                }
-            }
-
-            PullRefreshIndicator(
-                refreshing = homeUiState.isLoading,
-                state = pullRefreshState,
-                modifier = Modifier.align(Alignment.TopCenter),
-                backgroundColor = CardWhite,
-                contentColor = BlueBtn
-            )
-        }
-    }
-}
-
-@Composable
-private fun ActiveOrdersBar(
-    orderCount: Int,
-    onClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = BlueBtn
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Surface(
-                    shape = CircleShape,
-                    color = Color.White,
-                    modifier = Modifier.size(40.dp)
-                ) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ShoppingBag,
-                            contentDescription = null,
-                            tint = BlueBtn,
-                            modifier = Modifier.size(20.dp)
+                    
+                    Column {
+                        Text(
+                            text = "$sharedFileCount ${if (sharedFileCount == 1) "file" else "files"} ready to upload",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextPrimary
+                        )
+                        Text(
+                            text = "Select a shop to continue",
+                            fontSize = 14.sp,
+                            color = TextSecondary
                         )
                     }
                 }
+            }
 
-                Column {
-                    Text(
-                        text = "Active Orders",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Available Shops",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary
+            )
+
+            // GBlock Shop Card
+            SelectableShopCard(
+                shopName = ShopId.GBLOCK.displayName,
+                isOpen = homeUiState.isGBlockShopOpen,
+                pricePerPage = homeUiState.gblockPricePerPage,
+                onSelectShop = { onShopSelected(ShopId.GBLOCK.name) }
+            )
+
+            // COS Shop Card
+            SelectableShopCard(
+                shopName = ShopId.COS.displayName,
+                isOpen = homeUiState.isCosShopOpen,
+                pricePerPage = homeUiState.cosPricePerPage,
+                onSelectShop = { onShopSelected(ShopId.COS.name) }
+            )
+
+            // Info text
+            if (!homeUiState.isGBlockShopOpen && !homeUiState.isCosShopOpen) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = ErrorRed.copy(alpha = 0.1f)
                     )
+                ) {
                     Text(
-                        text = "$orderCount ${if (orderCount == 1) "order" else "orders"} in progress",
-                        fontSize = 13.sp,
-                        color = Color.White.copy(alpha = 0.9f)
+                        text = "All shops are currently closed. Please try again later.",
+                        modifier = Modifier.padding(16.dp),
+                        color = ErrorRed,
+                        fontSize = 14.sp,
+                        textAlign = TextAlign.Center
                     )
                 }
             }
-
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                contentDescription = "View Orders",
-                tint = Color.White,
-                modifier = Modifier.size(24.dp)
-            )
         }
     }
 }
 
 @Composable
-private fun ShopCard(
+private fun SelectableShopCard(
     shopName: String,
-    shopId: String,
     isOpen: Boolean,
     pricePerPage: PricePerPage,
     onSelectShop: () -> Unit
@@ -321,9 +190,7 @@ private fun ShopCard(
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
             containerColor = CardWhite
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-    ) {
+        )) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -341,7 +208,7 @@ private fun ShopCard(
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     modifier = Modifier.weight(1f)
                 ) {
-                    // Shop icon - larger
+                    // Shop icon
                     Surface(
                         shape = RoundedCornerShape(16.dp),
                         color = if (isOpen) BlueBtn.copy(alpha = 0.12f) else Color(0xFFE5E7EB),
@@ -370,7 +237,7 @@ private fun ShopCard(
                             fontWeight = FontWeight.Bold,
                             color = if (isOpen) TextPrimary else TextSecondary
                         )
-                        
+
                         // Status badge
                         Surface(
                             shape = RoundedCornerShape(20.dp),
@@ -398,7 +265,7 @@ private fun ShopCard(
                     }
                 }
 
-                // Arrow icon - larger
+                // Arrow icon
                 if (isOpen) {
                     Surface(
                         shape = CircleShape,
