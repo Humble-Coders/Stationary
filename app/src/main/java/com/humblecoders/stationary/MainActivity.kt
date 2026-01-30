@@ -1,6 +1,6 @@
 package com.humblecoders.stationary
 
-import StationaryTheme
+import PrintQTheme
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -94,7 +94,7 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
         handleShareIntent(intent)
 
         setContent {
-            StationaryTheme {
+            PrintQTheme {
                 PrintShopApp()
             }
         }

@@ -95,7 +95,7 @@ fun HomeScreen(
                 ) {
                     Column {
                         Text(
-                            text = "Print Shop",
+                            text = "PrintQ",
                             fontSize = 24.sp,
                             fontWeight = FontWeight.Bold,
                             color = TextPrimary

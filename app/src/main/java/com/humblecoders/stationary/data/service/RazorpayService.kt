@@ -38,7 +38,7 @@ class RazorpayService(
             checkout.setKeyID(keyId)
 
             val options = JSONObject()
-            options.put("name", "Print Shop")
+            options.put("name", "PrintQ")
             options.put("description", "Print Order Payment")
             options.put("image", "")
             options.put("order_id", razorpayOrderId)

@@ -123,7 +123,7 @@ fun LoginScreen(
                 Spacer(Modifier.height(16.dp))
 
                 Text(
-                    text = "Print Shop",
+                    text = "PrintQ",
                     fontSize = 32.sp,
                     fontWeight = FontWeight.Bold,
                     color = TextPrimary

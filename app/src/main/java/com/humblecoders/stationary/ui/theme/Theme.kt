@@ -46,7 +46,7 @@ private val DarkColorScheme = darkColorScheme(
 )
 
 @Composable
-fun StationaryTheme(
+fun PrintQTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
