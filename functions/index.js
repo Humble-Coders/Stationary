@@ -1,32 +1,39 @@
 const {onCall} = require("firebase-functions/v2/https");
 const {onDocumentUpdated} = require("firebase-functions/v2/firestore");
 const {setGlobalOptions} = require("firebase-functions/v2");
+const {defineSecret} = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const Razorpay = require("razorpay");
 const crypto = require("crypto");
+const {getStorage} = require("firebase-admin/storage");
+
+const WEBSITE_LIMITS = {
+  MAX_UPLOADS: 10,
+  WINDOW_MS: 30 * 60 * 1000,
+  COOLDOWN_MS: 10 * 1000,
+};
 
 // Set global options
 setGlobalOptions({
   region: "us-central1",
   memory: "256MiB",
+  serviceAccount: "stationary-16708@appspot.gserviceaccount.com"
 });
+
 
 admin.initializeApp();
 const db = admin.firestore();
 
 // ============================================
-// RAZORPAY CONFIGURATION
+// RAZORPAY CONFIGURATION (Using Secret Manager)
 // ============================================
 
-const RAZORPAY_CONFIG = {
-  KEY_ID: "rzp_test_RzWE1wWsadiMei", // Replace with actual
-  KEY_SECRET: "X17sE0R7Z7vfnziJBjtMkmm1", // Replace with actual
-};
+// Define secrets - these are securely stored in Firebase Secret Manager
+const razorpayKeyId = defineSecret("RAZORPAY_KEY_ID");
+const razorpayKeySecret = defineSecret("RAZORPAY_KEY_SECRET");
 
-const razorpay = new Razorpay({
-  key_id: RAZORPAY_CONFIG.KEY_ID,
-  key_secret: RAZORPAY_CONFIG.KEY_SECRET,
-});
+// Note: Razorpay instance is created inside functions that need it
+// because secrets are only available at runtime, not at deploy time
 
 // ============================================
 // HELPER FUNCTIONS
@@ -58,19 +65,38 @@ function parsePageRangeCount(pageRange) {
 
     for (const part of parts) {
       const trimmed = part.trim();
+      if (trimmed === "") continue; // Skip empty parts
+
       if (trimmed.includes("-")) {
         const range = trimmed.split("-");
         if (range.length === 2) {
-          const start = Math.max(1, parseInt(range[0].trim(), 10));
-          const end = Math.max(1, parseInt(range[1].trim(), 10));
-          if (start <= end) {
-            for (let i = start; i <= end; i++) {
+          const start = parseInt(range[0].trim(), 10);
+          const end = parseInt(range[1].trim(), 10);
+
+          // Skip if NaN (invalid input)
+          if (isNaN(start) || isNaN(end)) {
+            console.warn("Invalid page range (NaN detected):", trimmed);
+            continue;
+          }
+
+          const validStart = Math.max(1, start);
+          const validEnd = Math.max(1, end);
+
+          if (validStart <= validEnd) {
+            for (let i = validStart; i <= validEnd; i++) {
               pages.add(i);
             }
           }
         }
       } else {
         const page = parseInt(trimmed, 10);
+
+        // Skip if NaN (invalid input)
+        if (isNaN(page)) {
+          console.warn("Invalid page number (NaN detected):", trimmed);
+          continue;
+        }
+
         if (page >= 1) {
           pages.add(page);
         }
@@ -123,7 +149,14 @@ function calculateOrderPrice(documents, shopSettings) {
     }
 
     const settings = doc.printSettings;
-    const copies = settings.copies || 1;
+
+    // Validate copies: ensure it's a positive integer (at least 1)
+    let copies = parseInt(settings.copies, 10);
+    if (isNaN(copies) || copies < 1) {
+      copies = 1;
+    }
+    // Cap maximum copies to prevent abuse (e.g., max 100)
+    copies = Math.min(copies, 100);
 
     console.log("Print settings:", JSON.stringify(settings));
     console.log("Copies:", copies);
@@ -164,6 +197,151 @@ function calculateOrderPrice(documents, shopSettings) {
   return totalPrice;
 }
 
+
+exports.createWebsitePrintOrder = onCall(async (request) => {
+  try {
+    console.log("=== WEBSITE CREATE PRINT ORDER ===");
+
+    if (!request.auth) {
+      throw new Error("Unauthenticated website request");
+    }
+
+    const uid = request.auth.uid;
+    const payload = request.data.data || request.data;
+
+    const {documents, customerPhone, customerName, shopId} = payload;
+
+    if (!documents || !Array.isArray(documents) || documents.length === 0) {
+      throw new Error("Documents array is required");
+    }
+
+    if (!shopId || (shopId !== "GBLOCK" && shopId !== "COS")) {
+      throw new Error("Invalid shop ID");
+    }
+
+    const tempUserRef = db.collection("temp_users").doc(uid);
+    const now = Date.now();
+
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(tempUserRef);
+
+      if (!snap.exists) {
+        tx.set(tempUserRef, {
+          uploadCount: 1,
+          windowStart: now,
+          lastUploadAt: now,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        return;
+      }
+
+      const d = snap.data();
+
+      if (now - d.lastUploadAt < WEBSITE_LIMITS.COOLDOWN_MS) {
+        throw new Error("UPLOAD_COOLDOWN");
+      }
+
+      if (now - d.windowStart > WEBSITE_LIMITS.WINDOW_MS) {
+        tx.set(tempUserRef, {
+          uploadCount: 1,
+          windowStart: now,
+          lastUploadAt: now,
+        });
+        return;
+      }
+
+      if (d.uploadCount >= WEBSITE_LIMITS.MAX_UPLOADS) {
+        throw new Error("UPLOAD_LIMIT_REACHED");
+      }
+
+      tx.update(tempUserRef, {
+        uploadCount: d.uploadCount + 1,
+        lastUploadAt: now,
+      });
+    });
+
+    // Get shop-specific settings (includes isShopOpen and pricing)
+    const shopSettingsDoc = await db
+        .collection("shop_settings")
+        .doc(shopId)
+        .get();
+
+    if (!shopSettingsDoc.exists) {
+      throw new Error(`Shop settings not found for ${shopId}`);
+    }
+
+    const shopSettings = shopSettingsDoc.data();
+
+    if (!shopSettings.isShopOpen) {
+      throw new Error(`${shopId === "GBLOCK" ? "GBlock" : "Cos"} shop closed`);
+    }
+
+    const calculatedPrice = calculateOrderPrice(documents, shopSettings);
+    const orderId = generateOrderId();
+
+    const bucket = getStorage().bucket();
+    // Return just the order directory path, not including any filename
+    const uploadPath = `website_uploads/${orderId}`;
+
+    // Generate signed URLs for each document
+    const individualDocuments = await Promise.all(
+        documents.map(async (doc) => {
+          const docFilePath = `${uploadPath}/${doc.fileName}`;
+          const file = bucket.file(docFilePath);
+
+          // Generate signed URL valid for 7 days
+          const [signedUrl] = await file.getSignedUrl({
+            action: "read",
+            expires: Date.now() + 7 * 24 * 60 * 60 * 1000,
+          });
+
+          return {
+            fileName: doc.fileName,
+            fileType: doc.fileType,
+            fileUrl: signedUrl,
+            printSettings: {
+              customBWPages: doc.printSettings.customBWPages || "",
+              customColorPages: doc.printSettings.customColorPages || "",
+              copies: doc.printSettings.copies || 1,
+              printOnBothSides: doc.printSettings.printOnBothSides ?
+                "true" : "false",
+            },
+          };
+        }),
+    );
+
+    const orderData = {
+      orderId,
+      customerId: uid,
+      customerPhone: customerPhone || "",
+      customerName: customerName || "",
+      shopId: shopId,
+      individualDocuments,
+      documentCount: individualDocuments.length,
+      paymentStatus: "NOT_REQUIRED",
+      paymentAmount: calculatedPrice,
+      orderStatus: "PENDING",
+      source: "WEBSITE",
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    await db.collection("print_orders").doc(orderId).set(orderData);
+
+    console.log("Website order created:", orderId);
+
+    return {
+      success: true,
+      orderId,
+      uploadPath: uploadPath, // Just the directory: "website_uploads/ORD..."
+    };
+  } catch (error) {
+    console.error("Website order error:", error.message);
+    throw error;
+  }
+});
+
+
 // ============================================
 // CLOUD FUNCTION 1: CREATE ORDER
 // ============================================
@@ -171,6 +349,11 @@ function calculateOrderPrice(documents, shopSettings) {
 exports.createOrder = onCall(async (request) => {
   try {
     console.log("=== CREATE ORDER CALLED ===");
+
+    // Authentication check
+    if (!request.auth) {
+      throw new Error("Unauthenticated");
+    }
 
     const payload = request.data.data || request.data;
 
@@ -184,11 +367,12 @@ exports.createOrder = onCall(async (request) => {
     console.log("totalAmount:", payload.totalAmount);
     console.log("customerPhone:", payload.customerPhone);
 
-    const userId = payload.customerId;
+    // Use authenticated user ID instead of trusting payload
+    const userId = request.auth.uid;
 
-    if (!userId) {
-      console.error("customerId is missing");
-      throw new Error("Customer ID is required");
+    // Verify customerId matches authenticated user (if provided)
+    if (payload.customerId && payload.customerId !== userId) {
+      throw new Error("Unauthorized: customerId mismatch");
     }
 
     console.log("Processing order for user:", userId);
@@ -199,19 +383,23 @@ exports.createOrder = onCall(async (request) => {
       throw new Error("Documents array is required");
     }
 
+    // Get shop-specific settings for pricing
+    // Use shopId from payload, or default to "GBLOCK" if not provided
+    const targetShopId = payload.shopId || "GBLOCK";
     const shopSettingsDoc = await db
         .collection("shop_settings")
-        .doc("default")
+        .doc(targetShopId)
         .get();
 
     if (!shopSettingsDoc.exists) {
-      throw new Error("Shop settings not found");
+      throw new Error(`Shop settings not found for ${targetShopId}`);
     }
 
     const shopSettings = shopSettingsDoc.data();
 
-    if (!shopSettings.shopOpen) {
-      throw new Error("Shop is currently closed");
+    if (!shopSettings.isShopOpen) {
+      const shopName = targetShopId === "GBLOCK" ? "GBlock" : "Cos";
+      throw new Error(`${shopName} shop is currently closed`);
     }
 
     const calculatedPrice = calculateOrderPrice(
@@ -239,7 +427,7 @@ exports.createOrder = onCall(async (request) => {
           customBWPages: doc.printSettings.customBWPages || "",
           customColorPages: doc.printSettings.customColorPages || "",
           copies: doc.printSettings.copies || 1,
-          printOnBothSides: (doc.printSettings.printOnBothSides || false) ?
+          printOnBothSides: doc.printSettings.printOnBothSides === "true" ?
             "true" : "false",
         },
       };
@@ -282,211 +470,264 @@ exports.createOrder = onCall(async (request) => {
 // CLOUD FUNCTION 2: INITIATE PAYMENT
 // ============================================
 
-exports.initiatePayment = onCall(async (request) => {
-  try {
-    console.log("=== INITIATE PAYMENT CALLED ===");
+exports.initiatePayment = onCall(
+    {secrets: [razorpayKeyId, razorpayKeySecret]},
+    async (request) => {
+      try {
+        console.log("=== INITIATE PAYMENT CALLED ===");
 
-    const payload = request.data.data || request.data;
+        // Authentication check
+        if (!request.auth) {
+          throw new Error("Unauthenticated");
+        }
 
-    console.log("customerId:", payload.customerId);
-    console.log("orderId:", payload.orderId);
+        // Create Razorpay instance with secrets (available at runtime)
+        const razorpay = new Razorpay({
+          key_id: razorpayKeyId.value(),
+          key_secret: razorpayKeySecret.value(),
+        });
 
-    const {orderId, customerId} = payload;
+        const payload = request.data.data || request.data;
 
-    if (!orderId || !customerId) {
-      throw new Error("Order ID and Customer ID are required");
-    }
+        console.log("customerId:", payload.customerId);
+        console.log("orderId:", payload.orderId);
 
-    const orderDoc = await db.collection("print_orders").doc(orderId).get();
+        const {orderId} = payload;
+        const customerId = request.auth.uid;
 
-    if (!orderDoc.exists) {
-      throw new Error("Order not found");
-    }
+        // Verify customerId matches authenticated user (if provided)
+        if (payload.customerId && payload.customerId !== customerId) {
+          throw new Error("Unauthorized: customerId mismatch");
+        }
 
-    const order = orderDoc.data();
+        if (!orderId) {
+          throw new Error("Order ID is required");
+        }
 
-    if (order.customerId !== customerId) {
-      throw new Error("Unauthorized access to order");
-    }
+        const orderDoc = await db.collection("print_orders").doc(orderId).get();
 
-    if (order.paymentStatus === "PAID") {
-      throw new Error("Order is already paid");
-    }
+        if (!orderDoc.exists) {
+          throw new Error("Order not found");
+        }
 
-    // Create Razorpay order
-    const amountInPaise = Math.round(order.paymentAmount * 100);
+        const order = orderDoc.data();
 
-    const razorpayOrderOptions = {
-      amount: amountInPaise,
-      currency: "INR",
-      receipt: orderId,
-      notes: {
-        orderId: orderId,
-        customerId: customerId,
-      },
-    };
+        if (order.customerId !== customerId) {
+          throw new Error("Unauthorized access to order");
+        }
 
-    console.log("Creating Razorpay order:", razorpayOrderOptions);
+        if (order.paymentStatus === "PAID") {
+          throw new Error("Order is already paid");
+        }
 
-    const razorpayOrder = await razorpay.orders.create(
-        razorpayOrderOptions,
-    );
+        // Create Razorpay order
+        const amountInPaise = Math.round(order.paymentAmount * 100);
 
-    console.log("Razorpay order created:", razorpayOrder.id);
+        const razorpayOrderOptions = {
+          amount: amountInPaise,
+          currency: "INR",
+          receipt: orderId,
+          notes: {
+            orderId: orderId,
+            customerId: customerId,
+          },
+        };
 
-    // Store payment details
-    await db.collection("payment_transactions").doc(razorpayOrder.id).set({
-      razorpayOrderId: razorpayOrder.id,
-      orderId: orderId,
-      customerId: customerId,
-      amount: order.paymentAmount,
-      amountInPaise: amountInPaise,
-      status: "CREATED",
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        console.log("Creating Razorpay order:", razorpayOrderOptions);
+
+        const razorpayOrder = await razorpay.orders.create(
+            razorpayOrderOptions,
+        );
+
+        console.log("Razorpay order created:", razorpayOrder.id);
+
+        // Store payment details
+        await db.collection("payment_transactions").doc(razorpayOrder.id).set({
+          razorpayOrderId: razorpayOrder.id,
+          orderId: orderId,
+          customerId: customerId,
+          amount: order.paymentAmount,
+          amountInPaise: amountInPaise,
+          status: "CREATED",
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        // Update order
+        await db.collection("print_orders").doc(orderId).update({
+          razorpayOrderId: razorpayOrder.id,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        console.log("Payment initiated:", razorpayOrder.id);
+
+        return {
+          success: true,
+          razorpayOrderId: razorpayOrder.id,
+          amount: order.paymentAmount,
+          amountInPaise: amountInPaise,
+          currency: "INR",
+          keyId: razorpayKeyId.value(),
+        };
+      } catch (error) {
+        console.error("Error initiating payment:", error.message);
+        console.error("Error stack:", error.stack);
+        throw error;
+      }
     });
-
-    // Update order
-    await db.collection("print_orders").doc(orderId).update({
-      razorpayOrderId: razorpayOrder.id,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-
-    console.log("Payment initiated:", razorpayOrder.id);
-
-    return {
-      success: true,
-      razorpayOrderId: razorpayOrder.id,
-      amount: order.paymentAmount,
-      amountInPaise: amountInPaise,
-      currency: "INR",
-      keyId: RAZORPAY_CONFIG.KEY_ID,
-    };
-  } catch (error) {
-    console.error("Error initiating payment:", error.message);
-    console.error("Error stack:", error.stack);
-    throw error;
-  }
-});
 
 // ============================================
 // CLOUD FUNCTION 3: VERIFY PAYMENT
 // ============================================
 
-exports.verifyPayment = onCall(async (request) => {
-  try {
-    console.log("=== VERIFY PAYMENT CALLED ===");
+exports.verifyPayment = onCall(
+    {secrets: [razorpayKeyId, razorpayKeySecret]},
+    async (request) => {
+      try {
+        console.log("=== VERIFY PAYMENT CALLED ===");
 
-    const payload = request.data.data || request.data;
+        // Authentication check
+        if (!request.auth) {
+          throw new Error("Unauthenticated");
+        }
 
-    console.log("customerId:", payload.customerId);
-    console.log("razorpayOrderId:", payload.razorpayOrderId);
-    console.log("razorpayPaymentId:", payload.razorpayPaymentId);
+        // Create Razorpay instance with secrets (available at runtime)
+        const razorpay = new Razorpay({
+          key_id: razorpayKeyId.value(),
+          key_secret: razorpayKeySecret.value(),
+        });
 
-    const {
-      razorpayOrderId,
-      razorpayPaymentId,
-      razorpaySignature,
-      customerId,
-      orderId,
-    } = payload;
+        const payload = request.data.data || request.data;
 
-    if (!razorpayOrderId || !razorpayPaymentId || !customerId || !orderId) {
-      throw new Error("Missing required payment parameters");
-    }
+        const customerId = request.auth.uid;
 
-    // Get transaction details
-    const txnDoc = await db
-        .collection("payment_transactions")
-        .doc(razorpayOrderId)
-        .get();
+        console.log("customerId:", customerId);
+        console.log("razorpayOrderId:", payload.razorpayOrderId);
+        console.log("razorpayPaymentId:", payload.razorpayPaymentId);
 
-    if (!txnDoc.exists) {
-      throw new Error("Transaction not found");
-    }
+        // Verify customerId matches authenticated user (if provided)
+        if (payload.customerId && payload.customerId !== customerId) {
+          throw new Error("Unauthorized: customerId mismatch");
+        }
 
-    const txnData = txnDoc.data();
+        const {
+          razorpayOrderId,
+          razorpayPaymentId,
+          razorpaySignature,
+          orderId,
+        } = payload;
 
-    if (txnData.customerId !== customerId) {
-      throw new Error("Unauthorized access to transaction");
-    }
+        if (!razorpayOrderId || !razorpayPaymentId || !orderId) {
+          throw new Error("Missing required payment parameters");
+        }
 
-    // Verify signature
-    const generatedSignature = crypto
-        .createHmac("sha256", RAZORPAY_CONFIG.KEY_SECRET)
-        .update(razorpayOrderId + "|" + razorpayPaymentId)
-        .digest("hex");
+        // Get transaction details
+        const txnDoc = await db
+            .collection("payment_transactions")
+            .doc(razorpayOrderId)
+            .get();
 
-    console.log("Generated signature:", generatedSignature);
-    console.log("Received signature:", razorpaySignature);
+        if (!txnDoc.exists) {
+          throw new Error("Transaction not found");
+        }
 
-    if (razorpaySignature && generatedSignature !== razorpaySignature) {
-      console.error("Signature verification failed");
+        const txnData = txnDoc.data();
 
-      await db.collection("payment_transactions")
-          .doc(razorpayOrderId)
-          .update({
-            status: "FAILED",
-            failureReason: "Invalid signature",
+        if (txnData.customerId !== customerId) {
+          throw new Error("Unauthorized access to transaction");
+        }
+
+        // Verify signature using secret
+        const generatedSignature = crypto
+            .createHmac("sha256", razorpayKeySecret.value())
+            .update(razorpayOrderId + "|" + razorpayPaymentId)
+            .digest("hex");
+
+        console.log("Generated signature:", generatedSignature);
+        console.log("Received signature:", razorpaySignature);
+
+        // SECURITY FIX: Signature is REQUIRED - reject if missing or invalid
+        if (!razorpaySignature || razorpaySignature.trim() === "") {
+          console.error("Payment signature is missing");
+
+          await db.collection("payment_transactions")
+              .doc(razorpayOrderId)
+              .update({
+                status: "FAILED",
+                failureReason: "Missing signature",
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              });
+
+          throw new Error("Payment verification failed - Signature required");
+        }
+
+        if (generatedSignature !== razorpaySignature) {
+          console.error("Signature verification failed");
+
+          await db.collection("payment_transactions")
+              .doc(razorpayOrderId)
+              .update({
+                status: "FAILED",
+                failureReason: "Invalid signature",
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              });
+
+          throw new Error("Payment verification failed - Invalid signature");
+        }
+
+        console.log("Signature verified successfully");
+
+        // Fetch payment details from Razorpay
+        const payment = await razorpay.payments.fetch(razorpayPaymentId);
+
+        console.log("Payment status:", payment.status);
+        console.log("Payment amount:", payment.amount);
+
+        // Verify amount
+        const expectedAmount = txnData.amountInPaise;
+        if (payment.amount !== expectedAmount) {
+          throw new Error("Amount mismatch");
+        }
+
+        // Update transaction
+        await db.collection("payment_transactions")
+            .doc(razorpayOrderId)
+            .update({
+              razorpayPaymentId: razorpayPaymentId,
+              status: payment.status === "captured" ? "SUCCESS" : "PENDING",
+              paymentMethod: payment.method,
+              verified: true,
+              verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+
+        // Update order
+        if (payment.status === "captured") {
+          await db.collection("print_orders").doc(orderId).update({
+            paymentStatus: "PAID",
+            razorpayPaymentId: razorpayPaymentId,
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           });
 
-      throw new Error("Payment verification failed - Invalid signature");
-    }
+          console.log("Payment verified and order updated:", orderId);
 
-    console.log("Signature verified successfully");
-
-    // Fetch payment details from Razorpay
-    const payment = await razorpay.payments.fetch(razorpayPaymentId);
-
-    console.log("Payment status:", payment.status);
-    console.log("Payment amount:", payment.amount);
-
-    // Verify amount
-    const expectedAmount = txnData.amountInPaise;
-    if (payment.amount !== expectedAmount) {
-      throw new Error("Amount mismatch");
-    }
-
-    // Update transaction
-    await db.collection("payment_transactions")
-        .doc(razorpayOrderId)
-        .update({
-          razorpayPaymentId: razorpayPaymentId,
-          status: payment.status === "captured" ? "SUCCESS" : "PENDING",
-          paymentMethod: payment.method,
-          verified: true,
-          verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
-
-    // Update order
-    if (payment.status === "captured") {
-      await db.collection("print_orders").doc(orderId).update({
-        paymentStatus: "PAID",
-        razorpayPaymentId: razorpayPaymentId,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
-
-      console.log("Payment verified and order updated:", orderId);
-
-      return {
-        success: true,
-        status: "PAID",
-        message: "Payment verified successfully",
-      };
-    } else {
-      return {
-        success: false,
-        status: payment.status.toUpperCase(),
-        message: "Payment not captured yet",
-      };
-    }
-  } catch (error) {
-    console.error("Error verifying payment:", error.message);
-    console.error("Error stack:", error.stack);
-    throw error;
-  }
-});
+          return {
+            success: true,
+            status: "PAID",
+            message: "Payment verified successfully",
+          };
+        } else {
+          return {
+            success: false,
+            status: payment.status.toUpperCase(),
+            message: "Payment not captured yet",
+          };
+        }
+      } catch (error) {
+        console.error("Error verifying payment:", error.message);
+        console.error("Error stack:", error.stack);
+        throw error;
+      }
+    });
 
 // ============================================
 // CLOUD FUNCTION 4: CHECK ORDER STATUS
@@ -494,11 +735,22 @@ exports.verifyPayment = onCall(async (request) => {
 
 exports.checkOrderStatus = onCall(async (request) => {
   try {
-    const payload = request.data.data || request.data;
-    const {orderId, customerId} = payload;
+    // Authentication check
+    if (!request.auth) {
+      throw new Error("Unauthenticated");
+    }
 
-    if (!orderId || !customerId) {
-      throw new Error("Order ID and Customer ID are required");
+    const payload = request.data.data || request.data;
+    const {orderId} = payload;
+    const customerId = request.auth.uid;
+
+    // Verify customerId matches authenticated user (if provided)
+    if (payload.customerId && payload.customerId !== customerId) {
+      throw new Error("Unauthorized: customerId mismatch");
+    }
+
+    if (!orderId) {
+      throw new Error("Order ID is required");
     }
 
     const orderDoc = await db.collection("print_orders").doc(orderId).get();
@@ -529,7 +781,57 @@ exports.checkOrderStatus = onCall(async (request) => {
 });
 
 // ============================================
-// CLOUD FUNCTION 5: SEND FCM NOTIFICATION ON ORDER STATUS CHANGE
+// CLOUD FUNCTION 5: MARK ORDER AS SUBMITTED (Website upload complete)
+// ============================================
+
+exports.markOrderAsSubmitted = onCall(async (request) => {
+  try {
+    console.log("=== MARK ORDER AS SUBMITTED ===");
+
+    // Authentication check
+    if (!request.auth) {
+      throw new Error("Unauthenticated");
+    }
+
+    const {orderId} = request.data;
+
+    if (!orderId) {
+      throw new Error("Order ID is required");
+    }
+
+    const orderRef = db.collection("print_orders").doc(orderId);
+    const orderDoc = await orderRef.get();
+
+    if (!orderDoc.exists) {
+      throw new Error("Order not found");
+    }
+
+    const orderData = orderDoc.data();
+
+    // Only allow status change from PENDING to SUBMITTED
+    if (orderData.orderStatus !== "PENDING") {
+      throw new Error(
+          `Order status is ${orderData.orderStatus}, expected PENDING`,
+      );
+    }
+
+    // Update status to SUBMITTED
+    await orderRef.update({
+      orderStatus: "SUBMITTED",
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    console.log("Order marked as submitted:", orderId);
+
+    return {success: true};
+  } catch (error) {
+    console.error("Error marking order as submitted:", error.message);
+    throw error;
+  }
+});
+
+// ============================================
+// CLOUD FUNCTION 6: SEND FCM NOTIFICATION ON ORDER STATUS CHANGE
 // ============================================
 
 exports.onOrderStatusChanged = onDocumentUpdated(

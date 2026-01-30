@@ -3,16 +3,17 @@ package com.humblecoders.stationary.ui.screen
 import android.annotation.SuppressLint
 import android.net.Uri
 import android.util.Log
+import android.widget.Toast
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.*
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
+import androidx.compose.animation.core.EaseInOutCubic
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -37,7 +38,6 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -45,20 +45,16 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Upload
-import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -70,14 +66,12 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -95,20 +89,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import com.humblecoders.stationary.data.model.ColorMode
+import com.humblecoders.stationary.MainActivity
 import com.humblecoders.stationary.data.model.DocumentItem
 import com.humblecoders.stationary.data.model.FileType
 import com.humblecoders.stationary.data.model.Orientation
-import com.humblecoders.stationary.data.model.PrintSettings
 import com.humblecoders.stationary.data.model.PricePerPage
+import com.humblecoders.stationary.data.model.PrintSettings
+import com.humblecoders.stationary.data.service.RazorpayService
 import com.humblecoders.stationary.ui.component.ShopClosedCard
 import com.humblecoders.stationary.ui.viewmodel.DocumentUploadViewModel
-import android.widget.Toast
-import androidx.activity.ComponentActivity
-import com.humblecoders.stationary.MainActivity
-import com.humblecoders.stationary.data.service.RazorpayService
 import com.humblecoders.stationary.ui.viewmodel.PaymentViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 // Modern color palette
 private val BlueBtn = Color(0xFF3B82F6)
@@ -563,50 +555,99 @@ private fun DocumentsScreen(
                                 color = TextPrimary
                             )
                         }
+
+                        // Add more files button (smaller, in top bar)
+                        OutlinedButton(
+                            onClick = onAddMore,
+                            enabled = !uiState.isUploading && !paymentState.isProcessing,
+                            modifier = Modifier.height(36.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.5.dp, if (!uiState.isUploading && !paymentState.isProcessing) BlueBtn else BorderGray),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = BlueBtn,
+                                disabledContentColor = TextSecondary
+                            ),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = null,
+                                tint = if (!uiState.isUploading && !paymentState.isProcessing) BlueBtn else TextSecondary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                "Add Files",
+                                color = if (!uiState.isUploading && !paymentState.isProcessing) BlueBtn else TextSecondary,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                     }
 
-                    // Add more files button
-                    OutlinedButton(
-                        onClick = onAddMore,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp)
-                            .padding(horizontal = 16.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(2.dp, BlueBtn),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = BlueBtn
-                        )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = null,
-                            tint = BlueBtn,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            "Add More Files",
-                            color = BlueBtn,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                    Spacer(Modifier.height(8.dp))
 
-                    Spacer(Modifier.height(12.dp))
-
-                    // Page indicator only for PDF
+                    // Page indicator with navigation arrows for PDF
                     if (isPdfFiles && pagerState != null) {
-                        Text(
-                            text = "File ${pagerState.currentPage + 1} of ${uiState.documents.size}",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = TextSecondary,
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(bottom = 12.dp),
-                            textAlign = TextAlign.Center
-                        )
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Left arrow
+                            IconButton(
+                                onClick = {
+                                    val prevPage = (pagerState.currentPage - 1).coerceAtLeast(0)
+                                    kotlinx.coroutines.MainScope().launch {
+                                        pagerState.animateScrollToPage(prevPage)
+                                    }
+                                },
+                                enabled = pagerState.currentPage > 0 && !uiState.isUploading && !paymentState.isProcessing,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Previous file",
+                                    tint = if (pagerState.currentPage > 0 && !uiState.isUploading && !paymentState.isProcessing) 
+                                        TextPrimary else BorderGray,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+
+                            Spacer(Modifier.width(12.dp))
+
+                            // File counter
+                            Text(
+                                text = "File ${pagerState.currentPage + 1} of ${uiState.documents.size}",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = TextSecondary
+                            )
+
+                            Spacer(Modifier.width(12.dp))
+
+                            // Right arrow
+                            IconButton(
+                                onClick = {
+                                    val nextPage = (pagerState.currentPage + 1).coerceAtMost(uiState.documents.size - 1)
+                                    kotlinx.coroutines.MainScope().launch {
+                                        pagerState.animateScrollToPage(nextPage)
+                                    }
+                                },
+                                enabled = pagerState.currentPage < uiState.documents.size - 1 && !uiState.isUploading && !paymentState.isProcessing,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Next file",
+                                    tint = if (pagerState.currentPage < uiState.documents.size - 1 && !uiState.isUploading && !paymentState.isProcessing) 
+                                        TextPrimary else BorderGray,
+                                    modifier = Modifier.size(20.dp).rotate(180f)
+                                )
+                            }
+                        }
                     } else {
                         Text(
                             text = "${uiState.documents.size} ${if (uiState.documents.size == 1) "file" else "files"} selected",
@@ -619,6 +660,8 @@ private fun DocumentsScreen(
                             textAlign = TextAlign.Center
                         )
                     }
+
+                    Spacer(Modifier.height(4.dp))
                 }
             }
         }
@@ -649,6 +692,7 @@ private fun DocumentsScreen(
                             DocumentCard(
                                 document = uiState.documents[page],
                                 pricePerPage = uiState.pricePerPage,
+                                isProcessing = uiState.isUploading || paymentState.isProcessing,
                                 onRemove = { onRemoveDocument(uiState.documents[page].id) },
                                 onUpdateSettings = { settings ->
                                     onUpdateSettings(uiState.documents[page].id, settings)
@@ -670,6 +714,7 @@ private fun DocumentsScreen(
                         items(uiState.documents, key = { it.id }) { document ->
                             NonPdfDocumentCard(
                                 document = document,
+                                isProcessing = uiState.isUploading || paymentState.isProcessing,
                                 onRemove = { onRemoveDocument(document.id) }
                             )
                         }
@@ -875,6 +920,7 @@ private fun DocumentsScreen(
 @Composable
 private fun NonPdfDocumentCard(
     document: DocumentItem,
+    isProcessing: Boolean,
     onRemove: () -> Unit
 ) {
     Card(
@@ -961,12 +1007,13 @@ private fun NonPdfDocumentCard(
             // Remove button
             IconButton(
                 onClick = onRemove,
+                enabled = !isProcessing,
                 modifier = Modifier.size(36.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.Close,
                     contentDescription = "Remove",
-                    tint = TextSecondary,
+                    tint = if (!isProcessing) TextSecondary else BorderGray,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -978,6 +1025,7 @@ private fun NonPdfDocumentCard(
 private fun DocumentCard(
     document: DocumentItem,
     pricePerPage: PricePerPage,
+    isProcessing: Boolean,
     onRemove: () -> Unit,
     onUpdateSettings: (PrintSettings) -> Unit,
     onUpdatePageCount: (Int) -> Unit
@@ -1086,12 +1134,13 @@ private fun DocumentCard(
 
                     IconButton(
                         onClick = onRemove,
+                        enabled = !isProcessing,
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = "Remove",
-                            tint = TextSecondary,
+                            tint = if (!isProcessing) TextSecondary else BorderGray,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -1121,6 +1170,7 @@ private fun DocumentCard(
                             val pages = value.toIntOrNull()?.coerceAtLeast(1) ?: 0
                             onUpdatePageCount(pages)
                         },
+                        enabled = !isProcessing,
                         placeholder = { Text("Enter page count", fontSize = 13.sp) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
@@ -1130,7 +1180,9 @@ private fun DocumentCard(
                         shape = RoundedCornerShape(8.dp),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = BlueBtn,
-                            unfocusedBorderColor = BorderGray
+                            unfocusedBorderColor = BorderGray,
+                            disabledBorderColor = BorderGray,
+                            disabledTextColor = TextSecondary
                         )
                     )
                 }
@@ -1142,6 +1194,7 @@ private fun DocumentCard(
             PrintSettingsCard(
                 document = document,
                 pricePerPage = pricePerPage,
+                isProcessing = isProcessing,
                 onUpdateSettings = onUpdateSettings,
                 pageOverlapError = pageOverlapError
             )
@@ -1171,6 +1224,7 @@ private fun SupportingTextContent(
 private fun PrintSettingsCard(
     document: DocumentItem,
     pricePerPage: PricePerPage,
+    isProcessing: Boolean,
     onUpdateSettings: (PrintSettings) -> Unit,
     pageOverlapError: String?
 ) {
@@ -1227,10 +1281,12 @@ private fun PrintSettingsCard(
                                     onUpdateSettings(document.printSettings.copy(customBWPages = "1-$pageCount"))
                                 }
                             },
+                            enabled = !isProcessing,
                             modifier = Modifier.height(28.dp),
                             shape = RoundedCornerShape(6.dp),
                             colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = BlueBtn
+                                contentColor = BlueBtn,
+                                disabledContentColor = TextSecondary
                             ),
                             border = ButtonDefaults.outlinedButtonBorder.copy(
                                 width = 1.dp
@@ -1256,6 +1312,7 @@ private fun PrintSettingsCard(
                     onValueChange = { value: String ->
                         onUpdateSettings(document.printSettings.copy(customBWPages = value))
                     },
+                    enabled = !isProcessing,
                     placeholder = {
                         Text(
                             text = "e.g., 5-10 or 1,2,3 (max: $maxPages)",
@@ -1286,7 +1343,9 @@ private fun PrintSettingsCard(
                         cursorColor = BlueBtn,
                         errorBorderColor = ErrorRed,
                         focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary
+                        unfocusedTextColor = TextPrimary,
+                        disabledBorderColor = BorderGray,
+                        disabledTextColor = TextSecondary
                     ),
                     textStyle = LocalTextStyle.current.copy(
                         fontSize = 16.sp,
@@ -1348,10 +1407,12 @@ private fun PrintSettingsCard(
                                     onUpdateSettings(document.printSettings.copy(customColorPages = "1-$pageCount"))
                                 }
                             },
+                            enabled = !isProcessing,
                             modifier = Modifier.height(28.dp),
                             shape = RoundedCornerShape(6.dp),
                             colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = BlueBtn
+                                contentColor = BlueBtn,
+                                disabledContentColor = TextSecondary
                             ),
                             border = ButtonDefaults.outlinedButtonBorder.copy(
                                 width = 1.dp
@@ -1377,6 +1438,7 @@ private fun PrintSettingsCard(
                     onValueChange = { value: String ->
                         onUpdateSettings(document.printSettings.copy(customColorPages = value))
                     },
+                    enabled = !isProcessing,
                     placeholder = {
                         Text(
                             text = "e.g., 5-10 or 1,2,3 (max: $maxPages)",
@@ -1407,7 +1469,9 @@ private fun PrintSettingsCard(
                         cursorColor = BlueBtn,
                         errorBorderColor = ErrorRed,
                         focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary
+                        unfocusedTextColor = TextPrimary,
+                        disabledBorderColor = BorderGray,
+                        disabledTextColor = TextSecondary
                     ),
                     textStyle = LocalTextStyle.current.copy(
                         fontSize = 16.sp,
@@ -1480,6 +1544,7 @@ private fun PrintSettingsCard(
                         onClick = {
                             onUpdateSettings(document.printSettings.copy(orientation = orientation))
                         },
+                        enabled = !isProcessing,
                         modifier = Modifier
                             .weight(1f)
                             .height(44.dp),
@@ -1490,7 +1555,11 @@ private fun PrintSettingsCard(
                             containerColor = if (document.printSettings.orientation == orientation)
                                 BlueBtn else Color.White,
                             contentColor = if (document.printSettings.orientation == orientation)
-                                Color.White else Color(0xFF374151)
+                                Color.White else Color(0xFF374151),
+                            disabledContainerColor = if (document.printSettings.orientation == orientation)
+                                BlueBtn.copy(alpha = 0.5f) else Color(0xFFF3F4F6),
+                            disabledContentColor = if (document.printSettings.orientation == orientation)
+                                Color.White.copy(alpha = 0.5f) else TextSecondary
                         )
                     ) {
                         Text(
@@ -1522,6 +1591,7 @@ private fun PrintSettingsCard(
                         onClick = {
                             onUpdateSettings(document.printSettings.copy(printOnBothSides = value))
                         },
+                        enabled = !isProcessing,
                         modifier = Modifier
                             .weight(1f)
                             .height(44.dp),
@@ -1532,7 +1602,11 @@ private fun PrintSettingsCard(
                             containerColor = if (document.printSettings.printOnBothSides == value)
                                 BlueBtn else Color.White,
                             contentColor = if (document.printSettings.printOnBothSides == value)
-                                Color.White else Color(0xFF374151)
+                                Color.White else Color(0xFF374151),
+                            disabledContainerColor = if (document.printSettings.printOnBothSides == value)
+                                BlueBtn.copy(alpha = 0.5f) else Color(0xFFF3F4F6),
+                            disabledContentColor = if (document.printSettings.printOnBothSides == value)
+                                Color.White.copy(alpha = 0.5f) else TextSecondary
                         )
                     ) {
                         Text(
@@ -1570,9 +1644,14 @@ private fun PrintSettingsCard(
                             )
                         }
                     },
+                    enabled = !isProcessing,
                     modifier = Modifier.size(48.dp),
                     shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = BlueBtn),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = BlueBtn,
+                        disabledContainerColor = BlueBtn.copy(alpha = 0.5f),
+                        disabledContentColor = Color.White.copy(alpha = 0.5f)
+                    ),
                     contentPadding = PaddingValues(0.dp)
                 ) {
                     Text(
@@ -1592,6 +1671,7 @@ private fun PrintSettingsCard(
                             onUpdateSettings(document.printSettings.copy(copies = newValue))
                         }
                     },
+                    enabled = !isProcessing,
                     modifier = Modifier
                         .weight(1f)
                         .height(52.dp),
@@ -1607,7 +1687,9 @@ private fun PrintSettingsCard(
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = BlueBtn,
                         unfocusedBorderColor = BorderGray,
-                        cursorColor = BlueBtn
+                        cursorColor = BlueBtn,
+                        disabledBorderColor = BorderGray,
+                        disabledTextColor = TextSecondary
                     )
                 )
 
@@ -1620,9 +1702,14 @@ private fun PrintSettingsCard(
                             )
                         )
                     },
+                    enabled = !isProcessing,
                     modifier = Modifier.size(48.dp),
                     shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = BlueBtn),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = BlueBtn,
+                        disabledContainerColor = BlueBtn.copy(alpha = 0.5f),
+                        disabledContentColor = Color.White.copy(alpha = 0.5f)
+                    ),
                     contentPadding = PaddingValues(0.dp)
                 ) {
                     Text(

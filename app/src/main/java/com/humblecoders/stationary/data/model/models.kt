@@ -50,21 +50,17 @@ data class PrintOrder(
 // Rest of the existing models remain the same...
 
 data class ShopSettings(
-    val shopId: String = "default",
+    val shopId: String = "GBLOCK",
 
-    @PropertyName("shopOpen")
+    @PropertyName("isShopOpen")
     val shopOpen: Boolean = true,
-
-    @PropertyName("autoPrintEnabled")
-    val autoPrintEnabled: Boolean = false,
 
     @PropertyName("pricing")
     val pricePerPage: PricePerPage = PricePerPage()
 ) {
     constructor() : this(
-        shopId = "default",
+        shopId = "GBLOCK",
         shopOpen = true,
-        autoPrintEnabled = false,
         pricePerPage = PricePerPage()
     )
 }

@@ -17,12 +17,14 @@ import kotlinx.coroutines.delay
 
 data class HomeUiState(
     val orders: List<PrintOrder> = emptyList(),
-    val isShopOpen: Boolean = true,
+    val isGBlockShopOpen: Boolean = true,
+    val isCosShopOpen: Boolean = true,
     val isLoading: Boolean = false, // Changed default to false
     val error: String? = null,
     val customerId: String = "",
     val isCustomerIdSet: Boolean = false,
-    val pricePerPage: PricePerPage = PricePerPage() // Add prices from Firestore
+    val gblockPricePerPage: PricePerPage = PricePerPage(),
+    val cosPricePerPage: PricePerPage = PricePerPage()
 )
 
 class HomeViewModel(
@@ -46,7 +48,6 @@ class HomeViewModel(
     }
 
     init {
-        observeShopStatus()
         observeShopSettings()
 
         // Add auth state listener
@@ -81,34 +82,34 @@ class HomeViewModel(
         )
     }
 
-    private fun observeShopStatus() {
+    private fun observeShopSettings() {
+        // Observe GBLOCK shop settings
         viewModelScope.launch {
-            shopSettingsRepository.observeShopStatus()
+            shopSettingsRepository.observeShopSettings("GBLOCK")
                 .catch { e ->
-                    Log.e("HomeViewModel", "Error observing shop status", e)
-                    _uiState.value = _uiState.value.copy(
-                        error = "Failed to load shop status: ${e.message}"
-                    )
+                    Log.e("HomeViewModel", "Error observing GBLOCK shop settings", e)
                 }
-                .collect { isOpen ->
+                .collect { settings ->
+                    Log.d("HomeViewModel", "GBLOCK settings: open=${settings.shopOpen}, BW=${settings.pricePerPage.bw}, Color=${settings.pricePerPage.color}")
                     _uiState.value = _uiState.value.copy(
-                        isShopOpen = isOpen,
+                        isGBlockShopOpen = settings.shopOpen,
+                        gblockPricePerPage = settings.pricePerPage,
                         error = null
                     )
                 }
         }
-    }
-
-    private fun observeShopSettings() {
+        
+        // Observe COS shop settings
         viewModelScope.launch {
-            shopSettingsRepository.observeShopSettings()
+            shopSettingsRepository.observeShopSettings("COS")
                 .catch { e ->
-                    Log.e("HomeViewModel", "Error observing shop settings", e)
+                    Log.e("HomeViewModel", "Error observing COS shop settings", e)
                 }
                 .collect { settings ->
+                    Log.d("HomeViewModel", "COS settings: open=${settings.shopOpen}, BW=${settings.pricePerPage.bw}, Color=${settings.pricePerPage.color}")
                     _uiState.value = _uiState.value.copy(
-                        isShopOpen = settings.shopOpen,
-                        pricePerPage = settings.pricePerPage,
+                        isCosShopOpen = settings.shopOpen,
+                        cosPricePerPage = settings.pricePerPage,
                         error = null
                     )
                 }

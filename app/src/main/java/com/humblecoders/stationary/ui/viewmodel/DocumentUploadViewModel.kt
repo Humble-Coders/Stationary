@@ -73,7 +73,7 @@ class DocumentUploadViewModel(
     }
 
     init {
-        observeShopStatus()
+        // Shop status will be observed when shopId is set via setShopId()
         
         // Add auth state listener
         FirebaseAuth.getInstance().addAuthStateListener(authStateListener)
@@ -105,6 +105,8 @@ class DocumentUploadViewModel(
     fun setShopId(shopId: String) {
         Log.d("DocumentUploadVM", "Setting shop ID: $shopId")
         _uiState.value = _uiState.value.copy(shopId = shopId)
+        // Re-observe shop settings with the new shopId
+        observeShopStatus()
     }
 
     fun submitOrderWithPayment(onOrderCreated: (String) -> Unit) {
@@ -155,8 +157,13 @@ class DocumentUploadViewModel(
                         uploadProgress = (index.toFloat() / documents.size)
                     )
 
+                    val uri = document.uri ?: run {
+                        Log.e("DocumentUploadVM", "Document URI is null for ${document.fileName}")
+                        throw Exception("Document URI is null - please re-select the file")
+                    }
+
                     val documentUrl = printOrderRepository.uploadDocument(
-                        document.uri!!, 
+                        uri, 
                         document.fileType,
                         document.fileName
                     )
@@ -689,8 +696,13 @@ class DocumentUploadViewModel(
                         uploadProgress = (index.toFloat() / documents.size)
                     )
 
+                    val uri = document.uri ?: run {
+                        Log.e("DocumentUploadVM", "Document URI is null for ${document.fileName}")
+                        throw Exception("Document URI is null - please re-select the file")
+                    }
+
                     // Upload document (URL stored in individualDocuments if needed later)
-                    printOrderRepository.uploadDocument(document.uri!!, document.fileType, document.fileName)
+                    printOrderRepository.uploadDocument(uri, document.fileType, document.fileName)
 
                     // Simplified printSettings - only customBWPages, customColorPages, and copies
                     val printSettingsMap = mapOf(
@@ -817,14 +829,14 @@ class DocumentUploadViewModel(
                     Log.d("DocumentUploadVM", "Calling uploadDocument for: ${document.fileName}")
                     Log.d("DocumentUploadVM", "URI details - Scheme: ${document.uri?.scheme}, Path: ${document.uri?.path}")
                     
-                    if (document.uri == null) {
+                    val uri = document.uri ?: run {
                         Log.e("DocumentUploadVM", "❌ Document URI is null!")
-                        throw Exception("Document URI is null")
+                        throw Exception("Document URI is null - please re-select the file")
                     }
                     
                     try {
                         val documentUrl = printOrderRepository.uploadDocument(
-                            document.uri!!, 
+                            uri, 
                             document.fileType,
                             document.fileName
                         )
@@ -892,8 +904,12 @@ class DocumentUploadViewModel(
     private fun observeShopStatus() {
         viewModelScope.launch {
             try {
-                shopSettingsRepository.observeShopSettings().collect { settings ->
-                    Log.d("DocumentUploadVM", "Shop settings received: shopOpen=${settings.shopOpen}")
+                // Wait for shopId to be set before observing
+                val shopId = _uiState.value.shopId.takeIf { it.isNotEmpty() } ?: return@launch
+                
+                Log.d("DocumentUploadVM", "Observing shop settings for: $shopId")
+                shopSettingsRepository.observeShopSettings(shopId).collect { settings ->
+                    Log.d("DocumentUploadVM", "Shop settings received for $shopId: shopOpen=${settings.shopOpen}")
                     Log.d("DocumentUploadVM", "Pricing - BW: ${settings.pricePerPage.bw}, Color: ${settings.pricePerPage.color}")
                     currentShopSettings = settings
                     _uiState.value = _uiState.value.copy(

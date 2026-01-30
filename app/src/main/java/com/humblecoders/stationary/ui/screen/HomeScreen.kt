@@ -168,8 +168,8 @@ fun HomeScreen(
                 ShopCard(
                     shopName = ShopId.GBLOCK.displayName,
                     shopId = ShopId.GBLOCK.name,
-                    isOpen = homeUiState.isShopOpen,
-                    pricePerPage = homeUiState.pricePerPage,
+                    isOpen = homeUiState.isGBlockShopOpen,
+                    pricePerPage = homeUiState.gblockPricePerPage,
                     onSelectShop = { onNavigateToUpload(ShopId.GBLOCK.name) }
                 )
 
@@ -177,8 +177,8 @@ fun HomeScreen(
                 ShopCard(
                     shopName = ShopId.COS.displayName,
                     shopId = ShopId.COS.name,
-                    isOpen = homeUiState.isShopOpen,
-                    pricePerPage = homeUiState.pricePerPage,
+                    isOpen = homeUiState.isCosShopOpen,
+                    pricePerPage = homeUiState.cosPricePerPage,
                     onSelectShop = { onNavigateToUpload(ShopId.COS.name) }
                 )
 
