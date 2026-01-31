@@ -44,7 +44,8 @@ data class DocumentUploadUiState(
     val customerPhone: String = "",
     val shopId: String = "",
     val canAddMoreFiles: Boolean = true,
-    val pricePerPage: PricePerPage = PricePerPage() // Add prices from Firestore
+    val pricePerPage: PricePerPage = PricePerPage(), // Add prices from Firestore
+    val filesWithMissingSettings: List<Pair<Int, String>> = emptyList() // File number and name pairs
 )
 
 class DocumentUploadViewModel(
@@ -58,7 +59,13 @@ class DocumentUploadViewModel(
     private var currentShopSettings: ShopSettings = ShopSettings()
 
     companion object {
-        private const val MAX_DOCUMENTS = 10 // Maximum documents per upload
+        private const val MAX_DOCUMENTS = 10 // Maximum documents per upload for non-image files
+        private const val MAX_IMAGES = 50 // Maximum images per upload
+        
+        // Helper function to get max limit based on file type
+        private fun getMaxDocuments(fileType: FileType?): Int {
+            return if (fileType == FileType.IMAGE) MAX_IMAGES else MAX_DOCUMENTS
+        }
     }
 
     // Add auth state listener
@@ -127,13 +134,7 @@ class DocumentUploadViewModel(
             return
         }
 
-        // Check if payment amount is zero for PDF files
-        if (_uiState.value.totalCalculatedPrice <= 0 && _uiState.value.currentFileType == FileType.PDF) {
-            _uiState.value = _uiState.value.copy(error = "Please select pages to print")
-            return
-        }
-
-        // Validate all documents
+        // Validate all documents have page count if needed
         val invalidDocuments = _uiState.value.documents.filter { doc ->
             doc.needsUserPageInput && doc.userInputPageCount <= 0
         }
@@ -143,6 +144,26 @@ class DocumentUploadViewModel(
                 error = "Please enter page count for: ${invalidDocuments.joinToString(", ") { it.fileName }}"
             )
             return
+        }
+
+        // Validate that each PDF document has at least one page selected in either B&W or Color
+        if (_uiState.value.currentFileType == FileType.PDF) {
+            val documentsWithoutPages = _uiState.value.documents.mapIndexedNotNull { index, doc ->
+                val bwPages = doc.printSettings.customBWPages.trim()
+                val colorPages = doc.printSettings.customColorPages.trim()
+                if (bwPages.isEmpty() && colorPages.isEmpty()) {
+                    Pair(index + 1, doc.fileName) // File number (1-based) and file name
+                } else {
+                    null
+                }
+            }
+
+            if (documentsWithoutPages.isNotEmpty()) {
+                _uiState.value = _uiState.value.copy(
+                    filesWithMissingSettings = documentsWithoutPages
+                )
+                return
+            }
         }
 
         viewModelScope.launch {
@@ -245,10 +266,11 @@ class DocumentUploadViewModel(
                     return@launch
                 }
 
-                // Check maximum document limit
-                if (currentDocuments.size + uris.size > MAX_DOCUMENTS) {
+                // Check maximum document limit based on file type
+                val maxLimit = getMaxDocuments(detectedFileType)
+                if (currentDocuments.size + uris.size > maxLimit) {
                     _uiState.value = _uiState.value.copy(
-                        error = "Maximum $MAX_DOCUMENTS documents allowed. You can add ${MAX_DOCUMENTS - currentDocuments.size} more.",
+                        error = "Maximum $maxLimit ${if (detectedFileType == FileType.IMAGE) "images" else "documents"} allowed. You can add ${maxLimit - currentDocuments.size} more.",
                         isLoadingFiles = false
                     )
                     return@launch
@@ -300,7 +322,7 @@ class DocumentUploadViewModel(
                 _uiState.value = _uiState.value.copy(
                     currentFileType = detectedFileType,
                     documents = updatedDocuments,
-                    canAddMoreFiles = updatedDocuments.size < MAX_DOCUMENTS,
+                    canAddMoreFiles = updatedDocuments.size < maxLimit,
                     isLoadingFiles = false
                 )
 
@@ -647,6 +669,26 @@ class DocumentUploadViewModel(
             return
         }
 
+        // Validate that each PDF document has at least one page selected in either B&W or Color
+        if (_uiState.value.currentFileType == FileType.PDF) {
+            val documentsWithoutPages = _uiState.value.documents.mapIndexedNotNull { index, doc ->
+                val bwPages = doc.printSettings.customBWPages.trim()
+                val colorPages = doc.printSettings.customColorPages.trim()
+                if (bwPages.isEmpty() && colorPages.isEmpty()) {
+                    Pair(index + 1, doc.fileName) // File number (1-based) and file name
+                } else {
+                    null
+                }
+            }
+
+            if (documentsWithoutPages.isNotEmpty()) {
+                _uiState.value = _uiState.value.copy(
+                    filesWithMissingSettings = documentsWithoutPages
+                )
+                return
+            }
+        }
+
         // Validate page ranges for PDF documents
         val pageValidationErrors = mutableListOf<String>()
         _uiState.value.documents.forEach { document ->
@@ -769,6 +811,10 @@ class DocumentUploadViewModel(
 
     fun clearError() {
         _uiState.value = _uiState.value.copy(error = null)
+    }
+    
+    fun dismissMissingSettingsDialog() {
+        _uiState.value = _uiState.value.copy(filesWithMissingSettings = emptyList())
     }
     
     fun clearAllUserData() {

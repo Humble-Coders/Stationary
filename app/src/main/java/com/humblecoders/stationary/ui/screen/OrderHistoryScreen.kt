@@ -77,7 +77,6 @@ fun OrderHistoryScreen(
     onNavigateBack: () -> Unit
 ) {
     val historyOrders = viewModel.uiState.collectAsState().value.orders
-        .filter { it.orderStatus.toString() == "PRINTED" }
         .sortedByDescending { it.createdAt.toDate() }
 
     var selectedOrder by remember { mutableStateOf<PrintOrder?>(null) }
@@ -111,7 +110,7 @@ fun OrderHistoryScreen(
                         )
                         if (historyOrders.isNotEmpty()) {
                             Text(
-                                text = "${historyOrders.size} completed ${if (historyOrders.size == 1) "order" else "orders"}",
+                                text = "${historyOrders.size} ${if (historyOrders.size == 1) "order" else "orders"}",
                                 fontSize = 14.sp,
                                 color = TextSecondary
                             )
@@ -266,6 +265,10 @@ private fun HistoryOrderCard(
                 }
 
                 if (order.paymentAmount > 0) {
+                    val paymentStatus = viewModel.getPaymentStatusDisplay(order)
+                    val isUnpaid = paymentStatus == "Unpaid"
+                    val statusColor = if (isUnpaid) ErrorRed else SuccessGreen
+                    
                     Column(horizontalAlignment = Alignment.End) {
                         Text(
                             text = "₹${String.format("%.2f", order.paymentAmount)}",
@@ -275,13 +278,13 @@ private fun HistoryOrderCard(
                         )
                         Surface(
                             shape = RoundedCornerShape(4.dp),
-                            color = SuccessGreen.copy(alpha = 0.15f)
+                            color = statusColor.copy(alpha = 0.15f)
                         ) {
                             Text(
-                                text = "Paid",
+                                text = paymentStatus,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = SuccessGreen,
+                                color = statusColor,
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                             )
                         }
@@ -507,11 +510,7 @@ private fun OrderDetailsDialog(
                                     fontWeight = FontWeight.Bold,
                                     color = SuccessGreen
                                 )
-                                Text(
-                                    text = "Your order has been printed successfully",
-                                    fontSize = 13.sp,
-                                    color = TextSecondary
-                                )
+
                             }
                         }
                     }

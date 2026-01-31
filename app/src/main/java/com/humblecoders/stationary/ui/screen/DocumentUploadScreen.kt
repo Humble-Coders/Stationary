@@ -67,6 +67,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -143,6 +144,30 @@ fun DocumentUploadScreen(
     val paymentState by paymentViewModel.uiState.collectAsState()
 
     var showSuccessDialog by remember { mutableStateOf(false) }
+    var showBackWarningDialog by remember { mutableStateOf(false) }
+
+    // Handle back press with warning if documents are present
+    val onBackPressedCallback = remember {
+        object : androidx.activity.OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (uiState.documents.isNotEmpty()) {
+                    showBackWarningDialog = true
+                } else {
+                    onNavigateBack()
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        activity.onBackPressedDispatcher.addCallback(activity, onBackPressedCallback)
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            onBackPressedCallback.remove()
+        }
+    }
 
     // Get Razorpay service from MainActivity
     val razorpayService = remember(activity) {
@@ -257,11 +282,19 @@ fun DocumentUploadScreen(
             )
         }
     } else {
-        // Show documents with settings
+        // Show documents with settings - use warning dialog for back press
+        val handleBackPress = {
+            if (uiState.documents.isNotEmpty()) {
+                showBackWarningDialog = true
+            } else {
+                onNavigateBack()
+            }
+        }
+        
         DocumentsScreen(
             uiState = uiState,
             paymentState = paymentState,
-            onBackPressed = onNavigateBack,
+            onBackPressed = handleBackPress,
             onAddMore = { multipleFilePickerLauncher.launch("*/*") },
             onRemoveDocument = viewModel::removeDocument,
             onUpdateSettings = viewModel::updateDocumentSettings,
@@ -283,6 +316,26 @@ fun DocumentUploadScreen(
     // Success dialog
     if (showSuccessDialog) {
         PaymentSuccessDialog()
+    }
+    
+    // Missing settings dialog
+    if (uiState.filesWithMissingSettings.isNotEmpty()) {
+        MissingSettingsDialog(
+            filesWithMissingSettings = uiState.filesWithMissingSettings,
+            onDismiss = { viewModel.dismissMissingSettingsDialog() }
+        )
+    }
+    
+    // Back warning dialog
+    if (showBackWarningDialog) {
+        BackWarningDialog(
+            onDismiss = { showBackWarningDialog = false },
+            onConfirm = {
+                showBackWarningDialog = false
+                viewModel.clearState()
+                onNavigateBack()
+            }
+        )
     }
 }
 
@@ -396,6 +449,263 @@ private fun PaymentSuccessDialog() {
                     color = SuccessGreen,
                     strokeWidth = 3.dp
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MissingSettingsDialog(
+    filesWithMissingSettings: List<Pair<Int, String>>,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = CardWhite),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp)
+            ) {
+                // Warning icon
+                Surface(
+                    shape = CircleShape,
+                    color = ErrorRed.copy(alpha = 0.15f),
+                    modifier = Modifier
+                        .size(64.dp)
+                        .align(Alignment.CenterHorizontally)
+                ) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = ErrorRed,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                // Title
+                Text(
+                    text = "Page Settings Required",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                // Description
+                Text(
+                    text = if (filesWithMissingSettings.size == 1) {
+                        "Please enter at least one page number in either Black & White or Color for the following file:"
+                    } else {
+                        "Please enter at least one page number in either Black & White or Color for the following files:"
+                    },
+                    fontSize = 14.sp,
+                    color = TextSecondary,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                    lineHeight = 20.sp
+                )
+
+                Spacer(Modifier.height(16.dp))
+
+                // Files list in a card
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = BackgroundGray)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        filesWithMissingSettings.forEach { (fileNumber, fileName) ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                // File number badge
+                                Surface(
+                                    shape = CircleShape,
+                                    color = BlueBtn,
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "$fileNumber",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        )
+                                    }
+                                }
+
+                                // File name with ellipsis
+                                Text(
+                                    text = fileName,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = TextPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(20.dp))
+
+                // Got it button
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = BlueBtn)
+                ) {
+                    Text(
+                        text = "Got it",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BackWarningDialog(
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = CardWhite),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp)
+            ) {
+                // Warning icon
+                Surface(
+                    shape = CircleShape,
+                    color = Color(0xFFF59E0B).copy(alpha = 0.15f),
+                    modifier = Modifier
+                        .size(64.dp)
+                        .align(Alignment.CenterHorizontally)
+                ) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = Color(0xFFF59E0B),
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                // Title
+                Text(
+                    text = "Discard Changes?",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                // Description
+                Text(
+                    text = "You have selected files. Going back will clear all your selections and settings. Are you sure you want to continue?",
+                    fontSize = 14.sp,
+                    color = TextSecondary,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                    lineHeight = 20.sp
+                )
+
+                Spacer(Modifier.height(24.dp))
+
+                // Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Cancel button
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.5.dp, BorderGray),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = TextPrimary
+                        )
+                    ) {
+                        Text(
+                            text = "Cancel",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
+                    // Discard button
+                    Button(
+                        onClick = onConfirm,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = ErrorRed)
+                    ) {
+                        Text(
+                            text = "Discard",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+                }
             }
         }
     }
@@ -609,7 +919,7 @@ private fun UploadScreen(
                     Spacer(Modifier.height(16.dp))
 
                     Text(
-                        text = "Supported: PDF, Word, PowerPoint, Images • Max 10 files",
+                        text = "Supported: PDF, Word, PowerPoint, Images\nMax: 10 files (50 for images)",
                         fontSize = 12.sp,
                         color = TextSecondary,
                         textAlign = TextAlign.Center
@@ -648,34 +958,25 @@ private fun DocumentsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = onBackPressed) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                    contentDescription = "Back",
-                                    tint = TextPrimary
-                                )
-                            }
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                text = "Upload Documents",
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = TextPrimary
+                        IconButton(onClick = onBackPressed) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = TextPrimary
                             )
                         }
-
-                        // Add more files button (smaller, in top bar)
+                        
+                        // Centered Add Files button
                         OutlinedButton(
                             onClick = onAddMore,
-                            enabled = !uiState.isUploading && !paymentState.isProcessing,
+                            enabled = !uiState.isUploading && !paymentState.isProcessing && uiState.orderId == null,
                             modifier = Modifier.height(36.dp),
                             shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.5.dp, if (!uiState.isUploading && !paymentState.isProcessing) BlueBtn else BorderGray),
+                            border = BorderStroke(1.5.dp, if (!uiState.isUploading && !paymentState.isProcessing && uiState.orderId == null) BlueBtn else BorderGray),
                             colors = ButtonDefaults.outlinedButtonColors(
                                 contentColor = BlueBtn,
                                 disabledContentColor = TextSecondary
@@ -685,27 +986,28 @@ private fun DocumentsScreen(
                             Icon(
                                 imageVector = Icons.Default.Add,
                                 contentDescription = null,
-                                tint = if (!uiState.isUploading && !paymentState.isProcessing) BlueBtn else TextSecondary,
+                                tint = if (!uiState.isUploading && !paymentState.isProcessing && uiState.orderId == null) BlueBtn else TextSecondary,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(Modifier.width(6.dp))
                             Text(
                                 "Add Files",
-                                color = if (!uiState.isUploading && !paymentState.isProcessing) BlueBtn else TextSecondary,
+                                color = if (!uiState.isUploading && !paymentState.isProcessing && uiState.orderId == null) BlueBtn else TextSecondary,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
                         }
+                        
+                        // Empty spacer for balance
+                        Spacer(Modifier.width(48.dp))
                     }
-
-                    Spacer(Modifier.height(8.dp))
 
                     // Page indicator with navigation arrows for PDF
                     if (isPdfFiles && pagerState != null) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                                .padding(horizontal = 16.dp, vertical = 4.dp),
                             horizontalArrangement = Arrangement.Center,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -717,29 +1019,29 @@ private fun DocumentsScreen(
                                         pagerState.animateScrollToPage(prevPage)
                                     }
                                 },
-                                enabled = pagerState.currentPage > 0 && !uiState.isUploading && !paymentState.isProcessing,
-                                modifier = Modifier.size(32.dp)
+                                enabled = pagerState.currentPage > 0 && !uiState.isUploading && !paymentState.isProcessing && uiState.orderId == null,
+                                modifier = Modifier.size(28.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                                     contentDescription = "Previous file",
-                                    tint = if (pagerState.currentPage > 0 && !uiState.isUploading && !paymentState.isProcessing) 
+                                    tint = if (pagerState.currentPage > 0 && !uiState.isUploading && !paymentState.isProcessing && uiState.orderId == null) 
                                         TextPrimary else BorderGray,
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
 
-                            Spacer(Modifier.width(12.dp))
+                            Spacer(Modifier.width(8.dp))
 
                             // File counter
                             Text(
                                 text = "File ${pagerState.currentPage + 1} of ${uiState.documents.size}",
-                                fontSize = 14.sp,
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = TextSecondary
                             )
 
-                            Spacer(Modifier.width(12.dp))
+                            Spacer(Modifier.width(8.dp))
 
                             // Right arrow
                             IconButton(
@@ -749,27 +1051,27 @@ private fun DocumentsScreen(
                                         pagerState.animateScrollToPage(nextPage)
                                     }
                                 },
-                                enabled = pagerState.currentPage < uiState.documents.size - 1 && !uiState.isUploading && !paymentState.isProcessing,
-                                modifier = Modifier.size(32.dp)
+                                enabled = pagerState.currentPage < uiState.documents.size - 1 && !uiState.isUploading && !paymentState.isProcessing && uiState.orderId == null,
+                                modifier = Modifier.size(28.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                                     contentDescription = "Next file",
-                                    tint = if (pagerState.currentPage < uiState.documents.size - 1 && !uiState.isUploading && !paymentState.isProcessing) 
+                                    tint = if (pagerState.currentPage < uiState.documents.size - 1 && !uiState.isUploading && !paymentState.isProcessing && uiState.orderId == null) 
                                         TextPrimary else BorderGray,
-                                    modifier = Modifier.size(20.dp).rotate(180f)
+                                    modifier = Modifier.size(18.dp).rotate(180f)
                                 )
                             }
                         }
                     } else {
                         Text(
-                            text = "${uiState.documents.size} ${if (uiState.documents.size == 1) "file" else "files"} selected",
-                            fontSize = 14.sp,
+                            text = "${uiState.documents.size} ${if (uiState.documents.size == 1) "file" else "files"}",
+                            fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = TextSecondary,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(bottom = 12.dp),
+                                .padding(bottom = 8.dp),
                             textAlign = TextAlign.Center
                         )
                     }
@@ -802,7 +1104,7 @@ private fun DocumentsScreen(
                         DocumentCard(
                             document = uiState.documents[page],
                             pricePerPage = uiState.pricePerPage,
-                            isProcessing = uiState.isUploading || paymentState.isProcessing,
+                            isProcessing = uiState.isUploading || paymentState.isProcessing || uiState.orderId != null,
                             onRemove = { onRemoveDocument(uiState.documents[page].id) },
                             onUpdateSettings = { settings ->
                                 onUpdateSettings(uiState.documents[page].id, settings)
@@ -825,7 +1127,7 @@ private fun DocumentsScreen(
                     items(uiState.documents, key = { it.id }) { document ->
                         NonPdfDocumentCard(
                             document = document,
-                            isProcessing = uiState.isUploading || paymentState.isProcessing,
+                            isProcessing = uiState.isUploading || paymentState.isProcessing || uiState.orderId != null,
                             onRemove = { onRemoveDocument(document.id) }
                         )
                     }
@@ -846,66 +1148,36 @@ private fun DocumentsScreen(
                         val breakdown = calculatePriceBreakdown(uiState.documents, uiState.pricePerPage)
                         Card(
                             colors = CardDefaults.cardColors(
-                                containerColor = BlueBtn.copy(alpha = 0.1f)
+                                containerColor = BlueBtn.copy(alpha = 0.08f)
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(bottom = 12.dp)
                         ) {
                             Column(
-                                modifier = Modifier.padding(16.dp)
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                // Total Amount Header
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
+                                // Black & White pages with calculation
+                                if (breakdown.bwPages > 0) {
                                     Text(
-                                        text = "Total Amount",
-                                        fontSize = 14.sp,
-                                        color = TextSecondary,
-                                        modifier = Modifier.weight(1f, fill = false)
-                                    )
-                                    Text(
-                                        text = "₹${String.format("%.2f", uiState.totalCalculatedPrice)}",
-                                        fontSize = 24.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = BlueBtn,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
+                                        text = "B&W Pages: ${breakdown.bwPages} × ₹${String.format("%.0f", uiState.pricePerPage.bw)} = ₹${String.format("%.2f", breakdown.bwPrice)}",
+                                        fontSize = 12.sp,
+                                        color = TextPrimary,
+                                        fontWeight = FontWeight.Medium
                                     )
                                 }
                                 
-                                Spacer(Modifier.height(12.dp))
-                                HorizontalDivider(color = BorderGray)
-                                Spacer(Modifier.height(12.dp))
-                                
-                                // Breakdown
-                                Column(
-                                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    // Number of documents
-                                    BreakdownRow(
-                                        label = "Documents",
-                                        value = "${uiState.documents.size}"
+                                // Colored pages with calculation
+                                if (breakdown.colorPages > 0) {
+                                    Text(
+                                        text = "Color Pages: ${breakdown.colorPages} × ₹${String.format("%.0f", uiState.pricePerPage.color)} = ₹${String.format("%.2f", breakdown.colorPrice)}",
+                                        fontSize = 12.sp,
+                                        color = TextPrimary,
+                                        fontWeight = FontWeight.Medium
                                     )
-                                    
-                                    // Black & White pages
-                                    if (breakdown.bwPages > 0) {
-                                        BreakdownRow(
-                                            label = "B&W Pages",
-                                            value = "${breakdown.bwPages} × ₹${String.format("%.0f", uiState.pricePerPage.bw)} = ₹${String.format("%.2f", breakdown.bwPrice)}"
-                                        )
-                                    }
-                                    
-                                    // Colored pages
-                                    if (breakdown.colorPages > 0) {
-                                        BreakdownRow(
-                                            label = "Color Pages",
-                                            value = "${breakdown.colorPages} × ₹${String.format("%.0f", uiState.pricePerPage.color)} = ₹${String.format("%.2f", breakdown.colorPrice)}"
-                                        )
-                                    }
                                 }
                             }
                         }
@@ -921,7 +1193,7 @@ private fun DocumentsScreen(
                             }
                         },
                         enabled = !uiState.isUploading && !paymentState.isProcessing && 
-                                !(isPdfFiles && uiState.totalCalculatedPrice <= 0),
+                                !(isPdfFiles && uiState.totalCalculatedPrice <= 0) && uiState.orderId == null,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp),
@@ -1157,7 +1429,7 @@ private fun DocumentCard(
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(12.dp),
+                    .padding(10.dp),
                 shape = RoundedCornerShape(10.dp),
                 colors = CardDefaults.cardColors(containerColor = Color(0xFFF3F4F6)),
                 border = BorderStroke(1.dp, BorderGray)
@@ -1165,7 +1437,7 @@ private fun DocumentCard(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(10.dp),
+                        .padding(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
@@ -1211,7 +1483,7 @@ private fun DocumentCard(
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = TextPrimary,
-                                maxLines = 2,
+                                maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                             Spacer(Modifier.height(4.dp))
@@ -1309,7 +1581,7 @@ private fun DocumentCard(
         }
         
         // Spacer to allow scrolling to see number of copies
-        Spacer(Modifier.height(48.dp))
+        Spacer(Modifier.height(24.dp))
     }
 }
 
@@ -1342,18 +1614,8 @@ private fun PrintSettingsCard(
         colors = CardDefaults.cardColors(containerColor = CardWhite),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            // Print Type section
-            Text(
-                text = "Print Type",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextPrimary
-            )
-
-            Spacer(Modifier.height(14.dp))
-
-            // Black & White Pages
+        Column(modifier = Modifier.padding(12.dp)) {
+            // Black & White Pages (removed "Print Type" heading)
             Column {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1477,7 +1739,7 @@ private fun PrintSettingsCard(
                 }
             }
 
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(10.dp))
 
             // Colored Pages
             Column {
@@ -1631,18 +1893,18 @@ private fun PrintSettingsCard(
                 }
             }
 
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(10.dp))
             HorizontalDivider(color = BorderGray)
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(10.dp))
 
             // Orientation
             Text(
                 text = "Orientation",
-                fontSize = 14.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = TextPrimary
             )
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(6.dp))
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth()
@@ -1679,16 +1941,16 @@ private fun PrintSettingsCard(
                 }
             }
 
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(8.dp))
 
             // Print sides
             Text(
                 text = "Print Sides",
-                fontSize = 14.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = TextPrimary
             )
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(6.dp))
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth()
@@ -1726,16 +1988,16 @@ private fun PrintSettingsCard(
                 }
             }
 
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(8.dp))
 
             // Number of copies
             Text(
                 text = "Number of Copies",
-                fontSize = 14.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = TextPrimary
             )
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(6.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -1752,7 +2014,7 @@ private fun PrintSettingsCard(
                             )
                         }
                     },
-                    enabled = !isProcessing,
+                    enabled = !isProcessing && document.printSettings.copies > 1,
                     modifier = Modifier.size(48.dp),
                     shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.buttonColors(
@@ -1775,7 +2037,7 @@ private fun PrintSettingsCard(
                     value = document.printSettings.copies.toString(),
                     onValueChange = { value ->
                         val newValue = value.toIntOrNull()
-                        if (newValue != null && newValue > 0) {
+                        if (newValue != null && newValue in 1..10) {
                             onUpdateSettings(document.printSettings.copy(copies = newValue))
                         }
                     },
@@ -1804,13 +2066,15 @@ private fun PrintSettingsCard(
                 // Plus button
                 Button(
                     onClick = {
-                        onUpdateSettings(
-                            document.printSettings.copy(
-                                copies = document.printSettings.copies + 1
+                        if (document.printSettings.copies < 10) {
+                            onUpdateSettings(
+                                document.printSettings.copy(
+                                    copies = document.printSettings.copies + 1
+                                )
                             )
-                        )
+                        }
                     },
-                    enabled = !isProcessing,
+                    enabled = !isProcessing && document.printSettings.copies < 10,
                     modifier = Modifier.size(48.dp),
                     shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.buttonColors(
@@ -1827,6 +2091,18 @@ private fun PrintSettingsCard(
                         color = Color.White
                     )
                 }
+            }
+            
+            // Helper text for max copies
+            if (document.printSettings.copies >= 10) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "Maximum 10 copies allowed",
+                    fontSize = 11.sp,
+                    color = TextSecondary,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center
+                )
             }
         }
     }
