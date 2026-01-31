@@ -378,6 +378,75 @@ exports.createOrder = onCall(async (request) => {
 
     console.log("Processing order for user:", userId);
 
+    // ============================================
+    // RATE LIMITING: Max 10 orders per 30 minutes
+    // ============================================
+    const userRef = db.collection("users").doc(userId);
+    const userDoc = await userRef.get();
+
+    const now = Date.now();
+    const thirtyMinutesMs = 30 * 60 * 1000;
+
+    let orderRateLimit = {
+      count: 0,
+      windowStart: now,
+    };
+
+    if (userDoc.exists && userDoc.data().orderRateLimit) {
+      const existingLimit = userDoc.data().orderRateLimit;
+      // Handle both Firestore Timestamp and plain number
+      let windowStart = 0;
+      if (existingLimit.windowStart) {
+        if (typeof existingLimit.windowStart.toMillis === "function") {
+          windowStart = existingLimit.windowStart.toMillis();
+        } else {
+          windowStart = existingLimit.windowStart;
+        }
+      }
+
+      // Check if we're still in the same 30-minute window
+      if (now - windowStart < thirtyMinutesMs) {
+        // Same window - check count
+        orderRateLimit = {
+          count: existingLimit.count || 0,
+          windowStart: windowStart,
+        };
+
+        if (orderRateLimit.count >= 10) {
+          const remainingMs = thirtyMinutesMs - (now - windowStart);
+          const remainingMins = Math.ceil(remainingMs / 60000);
+          const plural = remainingMins > 1 ? "s" : "";
+          throw new Error(
+              "Rate limit exceeded. Max 10 orders per 30 minutes. " +
+              `Try again in ${remainingMins} minute${plural}.`,
+          );
+        }
+      } else {
+        // Window expired - reset
+        orderRateLimit = {
+          count: 0,
+          windowStart: now,
+        };
+      }
+    }
+
+    // Increment the order count for this window
+    const newRateLimit = {
+      count: orderRateLimit.count + 1,
+      windowStart: orderRateLimit.windowStart || now,
+      lastOrderAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    // Update user document with new rate limit data
+    await userRef.set({
+      orderRateLimit: newRateLimit,
+    }, {merge: true});
+
+    console.log(`Rate limit: ${newRateLimit.count}/10 in current window`);
+    // ============================================
+    // END RATE LIMITING
+    // ============================================
+
     if (!payload.documents ||
         !Array.isArray(payload.documents) ||
         payload.documents.length === 0) {

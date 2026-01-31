@@ -22,7 +22,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.humblecoders.stationary.data.model.PricePerPage
 import com.humblecoders.stationary.data.model.ShopId
+import com.humblecoders.stationary.ui.viewmodel.DocumentUploadViewModel
 import com.humblecoders.stationary.ui.viewmodel.HomeViewModel
+import kotlinx.coroutines.delay
 
 // Modern color palette (same as HomeScreen)
 private val BlueBtn = Color(0xFF3B82F6)
@@ -38,11 +40,29 @@ private val ErrorRed = Color(0xFFEF4444)
 @Composable
 fun ShopSelectionScreen(
     homeViewModel: HomeViewModel,
+    documentUploadViewModel: DocumentUploadViewModel,
     sharedFileCount: Int,
     onShopSelected: (String) -> Unit,
     onNavigateBack: () -> Unit
 ) {
     val homeUiState by homeViewModel.uiState.collectAsState()
+    
+    // Check if there are existing documents with a shop ID
+    var isCheckingExistingShop by remember { mutableStateOf(true) }
+    
+    LaunchedEffect(Unit) {
+        // Brief delay to check for existing shop
+        delay(300)
+        
+        val existingShopId = documentUploadViewModel.getExistingShopId()
+        if (existingShopId != null) {
+            // Navigate directly to the existing shop
+            onShopSelected(existingShopId)
+        } else {
+            // No existing shop, allow selection
+            isCheckingExistingShop = false
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -137,11 +157,43 @@ fun ShopSelectionScreen(
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary
             )
+            
+            // Show loading indicator while checking for existing shop
+            if (isCheckingExistingShop) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = CardWhite
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = BlueBtn,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "Checking for existing orders...",
+                            fontSize = 14.sp,
+                            color = TextSecondary
+                        )
+                    }
+                }
+            }
 
             // GBlock Shop Card
             SelectableShopCard(
                 shopName = ShopId.GBLOCK.displayName,
                 isOpen = homeUiState.isGBlockShopOpen,
+                isEnabled = !isCheckingExistingShop,
                 pricePerPage = homeUiState.gblockPricePerPage,
                 onSelectShop = { onShopSelected(ShopId.GBLOCK.name) }
             )
@@ -150,6 +202,7 @@ fun ShopSelectionScreen(
             SelectableShopCard(
                 shopName = ShopId.COS.displayName,
                 isOpen = homeUiState.isCosShopOpen,
+                isEnabled = !isCheckingExistingShop,
                 pricePerPage = homeUiState.cosPricePerPage,
                 onSelectShop = { onShopSelected(ShopId.COS.name) }
             )
@@ -180,13 +233,16 @@ fun ShopSelectionScreen(
 private fun SelectableShopCard(
     shopName: String,
     isOpen: Boolean,
+    isEnabled: Boolean = true,
     pricePerPage: PricePerPage,
     onSelectShop: () -> Unit
 ) {
+    val canSelect = isOpen && isEnabled
+    
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(enabled = isOpen, onClick = onSelectShop),
+            .clickable(enabled = canSelect, onClick = onSelectShop),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
             containerColor = CardWhite

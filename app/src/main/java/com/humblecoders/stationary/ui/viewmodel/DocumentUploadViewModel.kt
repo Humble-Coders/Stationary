@@ -28,6 +28,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
 import java.util.UUID
 
 data class DocumentUploadUiState(
@@ -136,8 +138,60 @@ class DocumentUploadViewModel(
     fun setShopId(shopId: String) {
         Log.d("DocumentUploadVM", "Setting shop ID: $shopId")
         _uiState.value = _uiState.value.copy(shopId = shopId)
+        persistedShopId = shopId
         // Re-observe shop settings with the new shopId
         observeShopStatus()
+    }
+
+    /**
+     * Check if there are existing documents with a shop ID already set.
+     * Used to determine if new shared files should go to the same shop
+     * or if shop selection is needed.
+     */
+    fun getExistingShopId(): String? {
+        val hasDocuments = _uiState.value.documents.isNotEmpty() || persistedDocuments.isNotEmpty()
+        val shopId = _uiState.value.shopId.takeIf { it.isNotEmpty() } 
+            ?: persistedShopId.takeIf { it.isNotEmpty() }
+        
+        return if (hasDocuments && shopId != null) {
+            Log.d("DocumentUploadVM", "Existing shop ID found: $shopId with ${_uiState.value.documents.size} documents")
+            shopId
+        } else {
+            Log.d("DocumentUploadVM", "No existing shop ID (hasDocuments=$hasDocuments, shopId=$shopId)")
+            null
+        }
+    }
+
+    /**
+     * Copy a file from content:// URI to the app's cache directory.
+     * This ensures permanent access to the file even after URI permissions expire.
+     * Returns the cached file:// URI, or null if copy fails.
+     */
+    private suspend fun copyToCache(context: Context, uri: Uri): Uri? = withContext(Dispatchers.IO) {
+        try {
+            // Get the original filename
+            val fileName = FileUtils.getFileName(context, uri)
+            val cacheDir = File(context.cacheDir, "shared_files")
+            if (!cacheDir.exists()) {
+                cacheDir.mkdirs()
+            }
+
+            // Use a unique filename to avoid conflicts
+            val uniqueFileName = "${System.currentTimeMillis()}_$fileName"
+            val cacheFile = File(cacheDir, uniqueFileName)
+
+            context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                FileOutputStream(cacheFile).use { outputStream ->
+                    inputStream.copyTo(outputStream)
+                }
+            }
+
+            Log.d("DocumentUploadVM", "Copied file to cache: ${cacheFile.absolutePath}")
+            Uri.fromFile(cacheFile)
+        } catch (e: Exception) {
+            Log.e("DocumentUploadVM", "Failed to copy file to cache: ${e.message}", e)
+            null
+        }
     }
 
     fun submitOrderWithPayment(onOrderCreated: (String) -> Unit) {
@@ -339,19 +393,36 @@ class DocumentUploadViewModel(
                     return@launch
                 }
 
-                // Process each NEW file
+                // Process each NEW file - copy content:// URIs to cache for permanent access
                 val newDocuments = mutableListOf<DocumentItem>()
 
                 for (uri in newUris) {
-                    if (!FileUtils.isValidFile(context, uri)) {
+                    // Copy content:// URIs to cache to prevent permission expiration
+                    val safeUri = if (uri.scheme == "content") {
+                        Log.d("DocumentUploadVM", "Copying content:// URI to cache: $uri")
+                        val cachedUri = copyToCache(context, uri)
+                        if (cachedUri != null) {
+                            Log.d("DocumentUploadVM", "Cached successfully: $cachedUri")
+                            cachedUri
+                        } else {
+                            Log.w("DocumentUploadVM", "Failed to cache, using original URI")
+                            uri
+                        }
+                    } else {
+                        // Already a file:// URI (from sharing), use as-is
+                        Log.d("DocumentUploadVM", "Using file:// URI directly: $uri")
+                        uri
+                    }
+
+                    if (!FileUtils.isValidFile(context, safeUri)) {
                         _uiState.value = _uiState.value.copy(
-                            error = "Invalid file: ${FileUtils.getFileName(context, uri)}",
+                            error = "Invalid file: ${FileUtils.getFileName(context, safeUri)}",
                             isLoadingFiles = false
                         )
                         return@launch
                     }
 
-                    val documentItem = processFile(context, uri, detectedFileType)
+                    val documentItem = processFile(context, safeUri, detectedFileType)
                     if (documentItem != null) {
                         newDocuments.add(documentItem)
                     }
@@ -597,23 +668,11 @@ class DocumentUploadViewModel(
         val document = _uiState.value.documents.find { it.id == documentId }
         if (document == null) return
 
-        val maxPages = document.getEffectivePageCount()
-        
-        // Validate and sanitize page ranges to ensure no page exceeds maxPages
-        val sanitizedSettings = if (document.fileType == FileType.PDF && maxPages > 0) {
-            val sanitizedBWPages = sanitizePageRange(settings.customBWPages, maxPages)
-            val sanitizedColorPages = sanitizePageRange(settings.customColorPages, maxPages)
-            settings.copy(
-                customBWPages = sanitizedBWPages,
-                customColorPages = sanitizedColorPages
-            )
-        } else {
-            settings
-        }
-
+        // Don't sanitize input - just store as-is
+        // Validation errors will be shown in UI and checked on submit
         val updatedDocuments = _uiState.value.documents.map { doc ->
             if (doc.id == documentId) {
-                doc.copy(printSettings = sanitizedSettings)
+                doc.copy(printSettings = settings)
             } else doc
         }
 

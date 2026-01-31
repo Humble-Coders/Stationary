@@ -128,7 +128,8 @@ fun DocumentUploadScreen(
     shopId: String,
     sharedFiles: List<Uri>? = null,
     onSharedFilesProcessed: () -> Unit = {},
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onNavigateToHome: () -> Unit = onNavigateBack // Default to onNavigateBack for backwards compatibility
 ) {
     val context = LocalContext.current
     
@@ -243,7 +244,7 @@ fun DocumentUploadScreen(
 
             viewModel.clearState()
             paymentViewModel.resetPaymentState()
-            onNavigateBack()
+            onNavigateToHome()
         }
     }
 
@@ -273,7 +274,7 @@ fun DocumentUploadScreen(
             // Auto dismiss after 5 seconds
             delay(5000)
             viewModel.dismissNonPdfSuccessDialog()
-            onNavigateBack()
+            onNavigateToHome()
         }
     }
 
@@ -392,8 +393,8 @@ private fun PaymentSuccessDialog() {
 
         Card(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(32.dp),
+                .fillMaxWidth(0.95f)
+                .padding(vertical = 24.dp),
             shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(containerColor = CardWhite),
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
@@ -507,8 +508,8 @@ private fun NonPdfUploadSuccessDialog() {
 
         Card(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(32.dp),
+                .fillMaxWidth(0.95f)
+                .padding(vertical = 24.dp),
             shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(containerColor = CardWhite),
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)

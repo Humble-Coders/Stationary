@@ -33,6 +33,10 @@ import com.humblecoders.stationary.data.service.RazorpayService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
+import android.provider.OpenableColumns
 import com.humblecoders.stationary.navigation.PrintShopNavigation
 import com.humblecoders.stationary.ui.viewmodel.*
 import com.humblecoders.stationary.ui.viewmodel.auth.LoginViewModel
@@ -90,6 +94,9 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
         requestNotificationPermission()
         initializeFCM()
 
+        // Clean up old cached shared files
+        cleanupOldCachedFiles()
+
         // Handle share intent if app was opened via share
         handleShareIntent(intent)
 
@@ -118,13 +125,19 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                     intent.getParcelableExtra(Intent.EXTRA_STREAM)
                 }
                 if (uri != null) {
-                    // Take read permission to prevent expiration
-                    takeUriPermission(uri)
                     Log.d("MainActivity", "Received shared file: $uri")
-                    // Accumulate files - add to existing pending files instead of replacing
-                    val existingFiles = sharedFilesData.value?.uris ?: emptyList()
-                    val newFiles = existingFiles + listOf(uri)
-                    sharedFilesData.value = SharedFilesData(newFiles)
+                    // Copy file to cache to get permanent access
+                    CoroutineScope(Dispatchers.Main).launch {
+                        val cachedUri = copyFileToCache(uri)
+                        if (cachedUri != null) {
+                            Log.d("MainActivity", "Cached file at: $cachedUri")
+                            val existingFiles = sharedFilesData.value?.uris ?: emptyList()
+                            val newFiles = existingFiles + listOf(cachedUri)
+                            sharedFilesData.value = SharedFilesData(newFiles)
+                        } else {
+                            Log.e("MainActivity", "Failed to cache shared file")
+                        }
+                    }
                 }
             }
             Intent.ACTION_SEND_MULTIPLE -> {
@@ -135,31 +148,77 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                     intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM)
                 }
                 if (!uris.isNullOrEmpty()) {
-                    // Take read permission for all URIs to prevent expiration
-                    uris.forEach { uri -> takeUriPermission(uri) }
                     Log.d("MainActivity", "Received ${uris.size} shared files")
-                    // Accumulate files - add to existing pending files instead of replacing
-                    val existingFiles = sharedFilesData.value?.uris ?: emptyList()
-                    val newFiles = existingFiles + uris
-                    sharedFilesData.value = SharedFilesData(newFiles)
+                    // Copy all files to cache to get permanent access
+                    CoroutineScope(Dispatchers.Main).launch {
+                        val cachedUris = mutableListOf<Uri>()
+                        for (uri in uris) {
+                            val cachedUri = copyFileToCache(uri)
+                            if (cachedUri != null) {
+                                cachedUris.add(cachedUri)
+                                Log.d("MainActivity", "Cached file at: $cachedUri")
+                            } else {
+                                Log.e("MainActivity", "Failed to cache file: $uri")
+                            }
+                        }
+                        if (cachedUris.isNotEmpty()) {
+                            val existingFiles = sharedFilesData.value?.uris ?: emptyList()
+                            val newFiles = existingFiles + cachedUris
+                            sharedFilesData.value = SharedFilesData(newFiles)
+                        }
+                    }
                 }
             }
         }
     }
 
-    private fun takeUriPermission(uri: Uri) {
+    /**
+     * Copy a shared file to the app's cache directory to ensure permanent access.
+     * This is necessary because URI permissions from share intents are temporary
+     * and expire when the Activity is recreated.
+     */
+    private suspend fun copyFileToCache(uri: Uri): Uri? = withContext(Dispatchers.IO) {
         try {
-            // Try to take persistable permission first (for content providers that support it)
-            contentResolver.takePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
-            Log.d("MainActivity", "Took persistent permission for: $uri")
-        } catch (e: SecurityException) {
-            // Permission might not be persistable, that's okay
-            // The temporary permission from the intent should still work
-            Log.w("MainActivity", "Could not take persistent permission (this is normal): ${e.message}")
+            val fileName = getFileNameFromUri(uri) ?: "shared_${System.currentTimeMillis()}"
+            val cacheDir = File(cacheDir, "shared_files")
+            if (!cacheDir.exists()) {
+                cacheDir.mkdirs()
+            }
+
+            // Use a unique filename to avoid conflicts
+            val uniqueFileName = "${System.currentTimeMillis()}_$fileName"
+            val cacheFile = File(cacheDir, uniqueFileName)
+
+            contentResolver.openInputStream(uri)?.use { inputStream ->
+                FileOutputStream(cacheFile).use { outputStream ->
+                    inputStream.copyTo(outputStream)
+                }
+            }
+
+            Log.d("MainActivity", "Copied file to cache: ${cacheFile.absolutePath}")
+            Uri.fromFile(cacheFile)
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Failed to copy file to cache: ${e.message}", e)
+            null
         }
+    }
+
+    /**
+     * Get the display name of a file from its URI
+     */
+    private fun getFileNameFromUri(uri: Uri): String? {
+        var fileName: String? = null
+        try {
+            contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (cursor.moveToFirst() && nameIndex != -1) {
+                    fileName = cursor.getString(nameIndex)
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("MainActivity", "Could not get filename from URI: ${e.message}")
+        }
+        return fileName
     }
 
     // Get shared files and mark as handled
@@ -170,7 +229,53 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
 
     // Clear shared files after they've been processed
     fun clearSharedFiles() {
+        // Clean up cached files
+        cleanupCachedSharedFiles()
         sharedFilesData.value = null
+    }
+
+    /**
+     * Clean up cached shared files to free up storage.
+     * Called when shared files have been processed/uploaded.
+     */
+    private fun cleanupCachedSharedFiles() {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val cacheDir = File(cacheDir, "shared_files")
+                if (cacheDir.exists()) {
+                    cacheDir.listFiles()?.forEach { file ->
+                        val deleted = file.delete()
+                        Log.d("MainActivity", "Deleted cached file ${file.name}: $deleted")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Error cleaning up cached files: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Clean up old cached files (older than 1 hour) on app start.
+     * This prevents the cache from growing indefinitely if the app crashes
+     * before files are properly cleaned up.
+     */
+    private fun cleanupOldCachedFiles() {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val cacheDir = File(cacheDir, "shared_files")
+                if (cacheDir.exists()) {
+                    val oneHourAgo = System.currentTimeMillis() - (60 * 60 * 1000)
+                    cacheDir.listFiles()?.forEach { file ->
+                        if (file.lastModified() < oneHourAgo) {
+                            val deleted = file.delete()
+                            Log.d("MainActivity", "Deleted old cached file ${file.name}: $deleted")
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Error cleaning up old cached files: ${e.message}")
+            }
+        }
     }
 
     override fun onPaymentSuccess(razorpayPaymentId: String?, paymentData: PaymentData?) {

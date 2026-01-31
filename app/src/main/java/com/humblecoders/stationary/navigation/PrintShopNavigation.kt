@@ -69,7 +69,7 @@ fun PrintShopNavigation(
     // Flag to prevent double navigation to shop selection
     var hasNavigatedToShopSelection by remember { mutableStateOf(false) }
 
-    // Navigate to shop selection when shared files are received and user is logged in
+    // Navigate to shop selection (or directly to document upload) when shared files are received
     LaunchedEffect(sharedFilesData) {
         if (sharedFilesData != null && sharedFilesData.uris.isNotEmpty()) {
             // Check current screen
@@ -84,14 +84,23 @@ fun PrintShopNavigation(
                 // Already on DocumentUploadScreen or ShopSelection, just update pending files
                 // No navigation needed - the files will be processed when ready
             } else {
-                // Need to navigate to shop selection
-                hasNavigatedToShopSelection = false
+                // Check if there are existing documents with a shop ID
+                val existingShopId = documentUploadViewModel.getExistingShopId()
                 
                 val currentUser = FirebaseAuth.getInstance().currentUser
                 if (currentUser != null) {
-                    // User is logged in, navigate to shop selection
-                    hasNavigatedToShopSelection = true
-                    navController.navigate(Screen.ShopSelection.route)
+                    hasNavigatedToShopSelection = false
+                    
+                    if (existingShopId != null) {
+                        // Documents already exist for a shop - go directly to that shop
+                        android.util.Log.d("PrintShopNav", "Existing documents found, navigating directly to shop: $existingShopId")
+                        navController.navigate(Screen.DocumentUpload.createRoute(existingShopId))
+                    } else {
+                        // No existing documents - need to select a shop
+                        android.util.Log.d("PrintShopNav", "No existing documents, navigating to shop selection")
+                        hasNavigatedToShopSelection = true
+                        navController.navigate(Screen.ShopSelection.route)
+                    }
                 }
                 // If user not logged in, they'll need to login first
                 // The HomeScreen LaunchedEffect will handle navigation after login
@@ -155,8 +164,18 @@ fun PrintShopNavigation(
                 if (pendingSharedFiles != null && 
                     !hasNavigatedToShopSelection && 
                     FirebaseAuth.getInstance().currentUser != null) {
-                    hasNavigatedToShopSelection = true
-                    navController.navigate(Screen.ShopSelection.route)
+                    
+                    // Check if there are existing documents with a shop ID
+                    val existingShopId = documentUploadViewModel.getExistingShopId()
+                    
+                    if (existingShopId != null) {
+                        // Documents already exist for a shop - go directly to that shop
+                        navController.navigate(Screen.DocumentUpload.createRoute(existingShopId))
+                    } else {
+                        // No existing documents - need to select a shop
+                        hasNavigatedToShopSelection = true
+                        navController.navigate(Screen.ShopSelection.route)
+                    }
                 }
             }
 
@@ -181,6 +200,7 @@ fun PrintShopNavigation(
         composable(Screen.ShopSelection.route) {
             ShopSelectionScreen(
                 homeViewModel = homeViewModel,
+                documentUploadViewModel = documentUploadViewModel,
                 sharedFileCount = pendingSharedFiles?.size ?: 0,
                 onShopSelected = { shopId ->
                     // Reset flag after navigating to document upload
@@ -229,6 +249,15 @@ fun PrintShopNavigation(
                     hasNavigatedToShopSelection = false
                     onSharedFilesHandled()
                     navController.popBackStack()
+                },
+                onNavigateToHome = {
+                    // Navigate to home after successful order submission
+                    pendingSharedFiles = null
+                    hasNavigatedToShopSelection = false
+                    onSharedFilesHandled()
+                    navController.navigate(Screen.Home.route) {
+                        popUpTo(Screen.Home.route) { inclusive = true }
+                    }
                 }
             )
         }

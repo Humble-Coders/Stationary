@@ -7,26 +7,69 @@ import android.provider.OpenableColumns
 object FileUtils {
 
     fun getFileName(context: Context, uri: Uri): String {
-        var fileName = "document.pdf"
-
-        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-            val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-            if (cursor.moveToFirst() && nameIndex != -1) {
-                fileName = cursor.getString(nameIndex)
+        // Handle file:// URIs directly
+        if (uri.scheme == "file") {
+            val path = uri.path
+            if (path != null) {
+                val file = java.io.File(path)
+                if (file.exists()) {
+                    // Extract original filename from the cached filename (remove timestamp prefix)
+                    val name = file.name
+                    val underscoreIndex = name.indexOf('_')
+                    return if (underscoreIndex > 0 && underscoreIndex < name.length - 1) {
+                        // Check if prefix looks like a timestamp (all digits)
+                        val prefix = name.substring(0, underscoreIndex)
+                        if (prefix.all { it.isDigit() }) {
+                            name.substring(underscoreIndex + 1)
+                        } else {
+                            name
+                        }
+                    } else {
+                        name
+                    }
+                }
             }
+        }
+
+        // Handle content:// URIs via ContentResolver
+        var fileName = "document.pdf"
+        try {
+            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (cursor.moveToFirst() && nameIndex != -1) {
+                    fileName = cursor.getString(nameIndex)
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("FileUtils", "Could not query filename: ${e.message}")
         }
 
         return fileName
     }
 
     fun getFileSize(context: Context, uri: Uri): Long {
-        var fileSize = 0L
-
-        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-            val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
-            if (cursor.moveToFirst() && sizeIndex != -1) {
-                fileSize = cursor.getLong(sizeIndex)
+        // Handle file:// URIs directly
+        if (uri.scheme == "file") {
+            val path = uri.path
+            if (path != null) {
+                val file = java.io.File(path)
+                if (file.exists()) {
+                    return file.length()
+                }
             }
+        }
+
+        // Handle content:// URIs via ContentResolver
+        var fileSize = 0L
+        try {
+            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (cursor.moveToFirst() && sizeIndex != -1) {
+                    fileSize = cursor.getLong(sizeIndex)
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("FileUtils", "Could not query file size: ${e.message}")
         }
 
         return fileSize
@@ -122,9 +165,28 @@ object FileUtils {
 
     fun getPdfPageCount(context: Context, uri: Uri): Int? {
         return try {
-            context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
-                android.graphics.pdf.PdfRenderer(pfd).use { renderer ->
-                    renderer.pageCount
+            // Handle file:// URIs directly
+            if (uri.scheme == "file") {
+                val path = uri.path
+                if (path != null) {
+                    val file = java.io.File(path)
+                    if (file.exists()) {
+                        android.os.ParcelFileDescriptor.open(
+                            file,
+                            android.os.ParcelFileDescriptor.MODE_READ_ONLY
+                        )?.use { pfd ->
+                            android.graphics.pdf.PdfRenderer(pfd).use { renderer ->
+                                renderer.pageCount
+                            }
+                        }
+                    } else null
+                } else null
+            } else {
+                // Handle content:// URIs via ContentResolver
+                context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                    android.graphics.pdf.PdfRenderer(pfd).use { renderer ->
+                        renderer.pageCount
+                    }
                 }
             }
         } catch (e: Exception) {
