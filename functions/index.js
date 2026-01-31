@@ -17,7 +17,7 @@ const WEBSITE_LIMITS = {
 setGlobalOptions({
   region: "us-central1",
   memory: "256MiB",
-  serviceAccount: "stationary-16708@appspot.gserviceaccount.com"
+  serviceAccount: "stationary-16708@appspot.gserviceaccount.com",
 });
 
 
@@ -305,6 +305,7 @@ exports.createWebsitePrintOrder = onCall(async (request) => {
               copies: doc.printSettings.copies || 1,
               printOnBothSides: doc.printSettings.printOnBothSides ?
                 "true" : "false",
+              orientation: doc.printSettings.orientation || "PORTRAIT",
             },
           };
         }),
@@ -429,6 +430,7 @@ exports.createOrder = onCall(async (request) => {
           copies: doc.printSettings.copies || 1,
           printOnBothSides: doc.printSettings.printOnBothSides === "true" ?
             "true" : "false",
+          orientation: doc.printSettings.orientation || "PORTRAIT",
         },
       };
     });
