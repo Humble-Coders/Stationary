@@ -72,18 +72,30 @@ fun PrintShopNavigation(
     // Navigate to shop selection when shared files are received and user is logged in
     LaunchedEffect(sharedFilesData) {
         if (sharedFilesData != null && sharedFilesData.uris.isNotEmpty()) {
-            // Reset flag when new shared files arrive
-            hasNavigatedToShopSelection = false
+            // Check current screen
+            val currentRoute = navController.currentDestination?.route
+            val isOnDocumentUpload = currentRoute?.startsWith("document_upload") == true
+            val isOnShopSelection = currentRoute == Screen.ShopSelection.route
+            
+            // Always update pending files with the accumulated list
             pendingSharedFiles = sharedFilesData.uris
             
-            val currentUser = FirebaseAuth.getInstance().currentUser
-            if (currentUser != null) {
-                // User is logged in, navigate to shop selection
-                hasNavigatedToShopSelection = true
-                navController.navigate(Screen.ShopSelection.route)
+            if (isOnDocumentUpload || isOnShopSelection) {
+                // Already on DocumentUploadScreen or ShopSelection, just update pending files
+                // No navigation needed - the files will be processed when ready
+            } else {
+                // Need to navigate to shop selection
+                hasNavigatedToShopSelection = false
+                
+                val currentUser = FirebaseAuth.getInstance().currentUser
+                if (currentUser != null) {
+                    // User is logged in, navigate to shop selection
+                    hasNavigatedToShopSelection = true
+                    navController.navigate(Screen.ShopSelection.route)
+                }
+                // If user not logged in, they'll need to login first
+                // The HomeScreen LaunchedEffect will handle navigation after login
             }
-            // If user not logged in, they'll need to login first
-            // The HomeScreen LaunchedEffect will handle navigation after login
         }
     }
 
@@ -206,6 +218,11 @@ fun PrintShopNavigation(
                 activity = activity as ComponentActivity,
                 shopId = shopId,
                 sharedFiles = filesToLoad,
+                onSharedFilesProcessed = {
+                    // Only clear local pending state, don't clear MainActivity's sharedFilesData
+                    // This allows new files to accumulate while on this screen
+                    pendingSharedFiles = null
+                },
                 onNavigateBack = {
                     // Clear shared files and reset flag when navigating back
                     pendingSharedFiles = null

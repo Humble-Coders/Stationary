@@ -46,7 +46,8 @@ data class DocumentUploadUiState(
     val canAddMoreFiles: Boolean = true,
     val pricePerPage: PricePerPage = PricePerPage(), // Add prices from Firestore
     val filesWithMissingSettings: List<Pair<Int, String>> = emptyList(), // File number and name pairs
-    val showNonPdfSuccessDialog: Boolean = false // Show success dialog for non-PDF uploads
+    val showNonPdfSuccessDialog: Boolean = false, // Show success dialog for non-PDF uploads
+    val fileTypeMismatchError: String? = null // Error message when trying to mix file types
 )
 
 class DocumentUploadViewModel(
@@ -63,9 +64,20 @@ class DocumentUploadViewModel(
         private const val MAX_DOCUMENTS = 10 // Maximum documents per upload for non-image files
         private const val MAX_IMAGES = 50 // Maximum images per upload
         
+        // Static storage to survive ViewModel recreation when Activity is recreated
+        private var persistedDocuments: List<DocumentItem> = emptyList()
+        private var persistedFileType: FileType? = null
+        private var persistedShopId: String = ""
+        
         // Helper function to get max limit based on file type
         private fun getMaxDocuments(fileType: FileType?): Int {
             return if (fileType == FileType.IMAGE) MAX_IMAGES else MAX_DOCUMENTS
+        }
+        
+        fun clearPersistedData() {
+            persistedDocuments = emptyList()
+            persistedFileType = null
+            persistedShopId = ""
         }
     }
 
@@ -86,6 +98,16 @@ class DocumentUploadViewModel(
         
         // Add auth state listener
         FirebaseAuth.getInstance().addAuthStateListener(authStateListener)
+        
+        // Restore persisted documents if any (survives Activity/ViewModel recreation)
+        if (persistedDocuments.isNotEmpty()) {
+            Log.d("DocumentUploadVM", "Restoring ${persistedDocuments.size} persisted documents")
+            _uiState.value = _uiState.value.copy(
+                documents = persistedDocuments,
+                currentFileType = persistedFileType,
+                shopId = persistedShopId
+            )
+        }
         
         // Check if user is already signed in
         val currentUser = FirebaseAuth.getInstance().currentUser
@@ -207,9 +229,10 @@ class DocumentUploadViewModel(
                         _uiState.value = _uiState.value.copy(
                             isUploading = false,
                             orderId = response.orderId,
-                            uploadProgress = 1f
+                            uploadProgress = 1f,
+                            showNonPdfSuccessDialog = true  // Show success dialog instead of payment
                         )
-                        onOrderCreated(response.orderId)
+                        // Payment disabled - onOrderCreated(response.orderId)
                     },
                     onFailure = { e ->
                         Log.e("DocumentUploadVM", "Cloud function error: ${e.message}", e)
@@ -236,10 +259,26 @@ class DocumentUploadViewModel(
 
         viewModelScope.launch {
             try {
+                Log.d("DocumentUploadVM", "=== selectFiles called ===")
+                Log.d("DocumentUploadVM", "Incoming URIs: ${uris.size}")
+                Log.d("DocumentUploadVM", "Current documents: ${_uiState.value.documents.size}")
+                
+                // Filter out URIs that are already in our documents list
+                val existingUris = _uiState.value.documents.mapNotNull { it.uri }.toSet()
+                val newUris = uris.filter { it !in existingUris }
+                
+                Log.d("DocumentUploadVM", "After filtering duplicates: ${newUris.size} new URIs")
+                
+                if (newUris.isEmpty()) {
+                    Log.d("DocumentUploadVM", "No new files to add (all duplicates)")
+                    _uiState.value = _uiState.value.copy(isLoadingFiles = false)
+                    return@launch
+                }
+                
                 _uiState.value = _uiState.value.copy(error = null, isLoadingFiles = true)
 
-                // Determine file type from first file
-                val firstUri = uris.first()
+                // Determine file type from first NEW file
+                val firstUri = newUris.first()
                 val detectedFileType = when {
                     FileUtils.isPdfFile(context, firstUri) -> FileType.PDF
                     FileUtils.isDocxFile(context, firstUri) -> FileType.DOCX
@@ -261,7 +300,7 @@ class DocumentUploadViewModel(
                 val currentDocuments = _uiState.value.documents
                 if (currentDocuments.isNotEmpty() && _uiState.value.currentFileType != detectedFileType) {
                     _uiState.value = _uiState.value.copy(
-                        error = "Cannot mix file types. Please upload only ${_uiState.value.currentFileType?.displayName} files.",
+                        fileTypeMismatchError = "You have ${_uiState.value.currentFileType?.displayName} files selected.\n\nPlease share only ${_uiState.value.currentFileType?.displayName} files or remove existing files first.",
                         isLoadingFiles = false
                     )
                     return@launch
@@ -269,7 +308,7 @@ class DocumentUploadViewModel(
 
                 // Check maximum document limit based on file type
                 val maxLimit = getMaxDocuments(detectedFileType)
-                if (currentDocuments.size + uris.size > maxLimit) {
+                if (currentDocuments.size + newUris.size > maxLimit) {
                     _uiState.value = _uiState.value.copy(
                         error = "Maximum $maxLimit ${if (detectedFileType == FileType.IMAGE) "images" else "documents"} allowed. You can add ${maxLimit - currentDocuments.size} more.",
                         isLoadingFiles = false
@@ -277,7 +316,7 @@ class DocumentUploadViewModel(
                     return@launch
                 }
 
-                val invalidFiles = uris.filter { uri ->
+                val invalidFiles = newUris.filter { uri ->
                     when (detectedFileType) {
                         FileType.PDF -> !FileUtils.isPdfFile(context, uri)
                         FileType.DOCX -> !FileUtils.isDocxFile(context, uri)
@@ -300,10 +339,10 @@ class DocumentUploadViewModel(
                     return@launch
                 }
 
-                // Process each file
+                // Process each NEW file
                 val newDocuments = mutableListOf<DocumentItem>()
 
-                for (uri in uris) {
+                for (uri in newUris) {
                     if (!FileUtils.isValidFile(context, uri)) {
                         _uiState.value = _uiState.value.copy(
                             error = "Invalid file: ${FileUtils.getFileName(context, uri)}",
@@ -318,14 +357,21 @@ class DocumentUploadViewModel(
                     }
                 }
 
-                // Update state with new documents
+                // Update state with new documents ADDED to existing
                 val updatedDocuments = currentDocuments + newDocuments
+                Log.d("DocumentUploadVM", "Updated documents count: ${updatedDocuments.size} (was ${currentDocuments.size}, added ${newDocuments.size})")
+                
                 _uiState.value = _uiState.value.copy(
                     currentFileType = detectedFileType,
                     documents = updatedDocuments,
                     canAddMoreFiles = updatedDocuments.size < maxLimit,
                     isLoadingFiles = false
                 )
+                
+                // Persist documents to survive ViewModel recreation
+                persistedDocuments = updatedDocuments
+                persistedFileType = detectedFileType
+                persistedShopId = _uiState.value.shopId
 
                 recalculateTotalPrice()
 
@@ -537,6 +583,12 @@ class DocumentUploadViewModel(
             currentFileType = if (updatedDocuments.isEmpty()) null else _uiState.value.currentFileType,
             canAddMoreFiles = updatedDocuments.size < MAX_DOCUMENTS
         )
+        
+        // Update persisted data
+        persistedDocuments = updatedDocuments
+        if (updatedDocuments.isEmpty()) {
+            persistedFileType = null
+        }
 
         recalculateTotalPrice()
     }
@@ -808,6 +860,8 @@ class DocumentUploadViewModel(
             isShopOpen = _uiState.value.isShopOpen,
             pricePerPage = _uiState.value.pricePerPage
         )
+        // Also clear persisted data
+        clearPersistedData()
     }
 
     fun clearError() {
@@ -816,6 +870,10 @@ class DocumentUploadViewModel(
     
     fun dismissMissingSettingsDialog() {
         _uiState.value = _uiState.value.copy(filesWithMissingSettings = emptyList())
+    }
+    
+    fun dismissFileTypeMismatchDialog() {
+        _uiState.value = _uiState.value.copy(fileTypeMismatchError = null)
     }
     
     fun dismissNonPdfSuccessDialog() {
@@ -838,6 +896,8 @@ class DocumentUploadViewModel(
             shopId = "",
             canAddMoreFiles = true
         )
+        // Also clear persisted data
+        clearPersistedData()
     }
     
     override fun onCleared() {

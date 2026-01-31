@@ -53,6 +53,7 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Store
 import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -126,6 +127,7 @@ fun DocumentUploadScreen(
     activity: ComponentActivity,
     shopId: String,
     sharedFiles: List<Uri>? = null,
+    onSharedFilesProcessed: () -> Unit = {},
     onNavigateBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -135,12 +137,26 @@ fun DocumentUploadScreen(
         viewModel.setShopId(shopId)
     }
 
+    // Track which URIs have been processed to avoid duplicates
+    var processedUris by remember { mutableStateOf(setOf<Uri>()) }
+    
     // Load shared files when screen appears (from external share intent)
     LaunchedEffect(sharedFiles, shopId) {
+        Log.d("DocumentUploadScreen", "LaunchedEffect fired - sharedFiles: ${sharedFiles?.size ?: 0}, processedUris: ${processedUris.size}")
         if (sharedFiles != null && sharedFiles.isNotEmpty()) {
-            // Small delay to ensure ViewModel is ready with shop settings
-            kotlinx.coroutines.delay(200)
-            viewModel.selectFiles(context, sharedFiles)
+            // Filter out already processed URIs
+            val newUris = sharedFiles.filter { it !in processedUris }
+            Log.d("DocumentUploadScreen", "New URIs to process: ${newUris.size}")
+            if (newUris.isNotEmpty()) {
+                // Small delay to ensure ViewModel is ready with shop settings
+                kotlinx.coroutines.delay(200)
+                viewModel.selectFiles(context, newUris)
+                // Mark these URIs as processed
+                processedUris = processedUris + newUris.toSet()
+                Log.d("DocumentUploadScreen", "ProcessedUris updated: ${processedUris.size}")
+            }
+            // Clear shared files from navigation state
+            onSharedFilesProcessed()
         }
     }
 
@@ -321,6 +337,19 @@ fun DocumentUploadScreen(
             filesWithMissingSettings = uiState.filesWithMissingSettings,
             onDismiss = { viewModel.dismissMissingSettingsDialog() }
         )
+    }
+    
+    // File type mismatch dialog
+    uiState.fileTypeMismatchError?.let { errorMessage ->
+        FileTypeMismatchDialog(
+            errorMessage = errorMessage,
+            onDismiss = { viewModel.dismissFileTypeMismatchDialog() }
+        )
+    }
+    
+    // Loading dialog when files are being processed
+    if (uiState.isLoadingFiles) {
+        LoadingFilesDialog()
     }
     
     // Back warning dialog
@@ -739,6 +768,135 @@ private fun MissingSettingsDialog(
                         color = Color.White
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FileTypeMismatchDialog(
+    errorMessage: String,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = CardWhite),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Warning icon
+                Surface(
+                    shape = CircleShape,
+                    color = ErrorRed.copy(alpha = 0.15f),
+                    modifier = Modifier.size(64.dp)
+                ) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = ErrorRed,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                // Title
+                Text(
+                    text = "Cannot Mix File Types",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                // Message
+                Text(
+                    text = errorMessage,
+                    fontSize = 14.sp,
+                    color = TextSecondary,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 20.sp
+                )
+
+                Spacer(Modifier.height(20.dp))
+
+                // Got it button
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = BlueBtn)
+                ) {
+                    Text(
+                        text = "Got it",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LoadingFilesDialog() {
+    Dialog(onDismissRequest = { }) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(48.dp),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = CardWhite),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(48.dp),
+                    color = BlueBtn,
+                    strokeWidth = 4.dp
+                )
+
+                Spacer(Modifier.height(20.dp))
+
+                Text(
+                    text = "Loading Files...",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary
+                )
+
+                Spacer(Modifier.height(8.dp))
+
+                Text(
+                    text = "Please wait while your files are being processed",
+                    fontSize = 13.sp,
+                    color = TextSecondary,
+                    textAlign = TextAlign.Center
+                )
             }
         }
     }
@@ -1282,7 +1440,7 @@ private fun DocumentsScreen(
                 }
             }
 
-            // Bottom payment section
+            // Bottom section
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 color = CardWhite,
@@ -1291,46 +1449,6 @@ private fun DocumentsScreen(
                 Column(
                     modifier = Modifier.padding(16.dp)
                 ) {
-                    // Total price display for PDF files
-                    if (isPdfFiles && uiState.totalCalculatedPrice > 0) {
-                        val breakdown = calculatePriceBreakdown(uiState.documents, uiState.pricePerPage)
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = BlueBtn.copy(alpha = 0.08f)
-                            ),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 12.dp)
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 14.dp, vertical = 10.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                // Black & White pages with calculation
-                                if (breakdown.bwPages > 0) {
-                                    Text(
-                                        text = "B&W Pages: ${breakdown.bwPages} × ₹${String.format("%.0f", uiState.pricePerPage.bw)} = ₹${String.format("%.2f", breakdown.bwPrice)}",
-                                        fontSize = 12.sp,
-                                        color = TextPrimary,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                }
-                                
-                                // Colored pages with calculation
-                                if (breakdown.colorPages > 0) {
-                                    Text(
-                                        text = "Color Pages: ${breakdown.colorPages} × ₹${String.format("%.0f", uiState.pricePerPage.color)} = ₹${String.format("%.2f", breakdown.colorPrice)}",
-                                        fontSize = 12.sp,
-                                        color = TextPrimary,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                }
-                            }
-                        }
-                    }
-
                     // Proceed button
                     Button(
                         onClick = {
@@ -1340,8 +1458,7 @@ private fun DocumentsScreen(
                                 onProceedDirect()
                             }
                         },
-                        enabled = !uiState.isUploading && !paymentState.isProcessing && 
-                                !(isPdfFiles && uiState.totalCalculatedPrice <= 0) && uiState.orderId == null,
+                        enabled = !uiState.isUploading && !paymentState.isProcessing && uiState.orderId == null,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp),
@@ -1392,11 +1509,7 @@ private fun DocumentsScreen(
                                 )
                                 Spacer(Modifier.width(8.dp))
                                 Text(
-                                    if (isPdfFiles) {
-                                        "Proceed - ₹${String.format("%.2f", uiState.totalCalculatedPrice)}"
-                                    } else {
-                                        "Proceed"
-                                    },
+                                    "Proceed",
                                     color = Color.White,
                                     fontSize = 16.sp,
                                     fontWeight = FontWeight.Bold
@@ -1649,14 +1762,6 @@ private fun DocumentCard(
                                     )
                                 }
                             }
-                            if (document.fileType == FileType.PDF && document.calculatedPrice > 0) {
-                                Text(
-                                    text = "₹${String.format("%.2f", document.calculatedPrice)}",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = BlueBtn
-                                )
-                            }
                         }
                     }
 
@@ -1776,47 +1881,30 @@ private fun PrintSettingsCard(
                         color = TextPrimary,
                         fontWeight = FontWeight.SemiBold
                     )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    OutlinedButton(
+                        onClick = {
+                            val pageCount = document.getEffectivePageCount()
+                            if (pageCount > 0) {
+                                onUpdateSettings(document.printSettings.copy(customBWPages = "1-$pageCount"))
+                            }
+                        },
+                        enabled = !isProcessing,
+                        modifier = Modifier.height(28.dp),
+                        shape = RoundedCornerShape(6.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = BlueBtn,
+                            disabledContentColor = TextSecondary
+                        ),
+                        border = ButtonDefaults.outlinedButtonBorder.copy(
+                            width = 1.dp
+                        ),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
                     ) {
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = Color(0xFFF3F4F6)
-                        ) {
-                            Text(
-                                "₹${String.format("%.0f", pricePerPage.bw)}/page",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Color(0xFF374151),
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                            )
-                        }
-                        OutlinedButton(
-                            onClick = {
-                                val pageCount = document.getEffectivePageCount()
-                                if (pageCount > 0) {
-                                    onUpdateSettings(document.printSettings.copy(customBWPages = "1-$pageCount"))
-                                }
-                            },
-                            enabled = !isProcessing,
-                            modifier = Modifier.height(28.dp),
-                            shape = RoundedCornerShape(6.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = BlueBtn,
-                                disabledContentColor = TextSecondary
-                            ),
-                            border = ButtonDefaults.outlinedButtonBorder.copy(
-                                width = 1.dp
-                            ),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                        ) {
-                            Text(
-                                "All",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
+                        Text(
+                            "All",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
                 Spacer(Modifier.height(6.dp))
@@ -1902,47 +1990,30 @@ private fun PrintSettingsCard(
                         color = TextPrimary,
                         fontWeight = FontWeight.SemiBold
                     )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    OutlinedButton(
+                        onClick = {
+                            val pageCount = document.getEffectivePageCount()
+                            if (pageCount > 0) {
+                                onUpdateSettings(document.printSettings.copy(customColorPages = "1-$pageCount"))
+                            }
+                        },
+                        enabled = !isProcessing,
+                        modifier = Modifier.height(28.dp),
+                        shape = RoundedCornerShape(6.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = BlueBtn,
+                            disabledContentColor = TextSecondary
+                        ),
+                        border = ButtonDefaults.outlinedButtonBorder.copy(
+                            width = 1.dp
+                        ),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
                     ) {
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = Color(0xFFF3F4F6)
-                        ) {
-                            Text(
-                                "₹${String.format("%.0f", pricePerPage.color)}/page",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Color(0xFF374151),
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                            )
-                        }
-                        OutlinedButton(
-                            onClick = {
-                                val pageCount = document.getEffectivePageCount()
-                                if (pageCount > 0) {
-                                    onUpdateSettings(document.printSettings.copy(customColorPages = "1-$pageCount"))
-                                }
-                            },
-                            enabled = !isProcessing,
-                            modifier = Modifier.height(28.dp),
-                            shape = RoundedCornerShape(6.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = BlueBtn,
-                                disabledContentColor = TextSecondary
-                            ),
-                            border = ButtonDefaults.outlinedButtonBorder.copy(
-                                width = 1.dp
-                            ),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                        ) {
-                            Text(
-                                "All",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
+                        Text(
+                            "All",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
                 Spacer(Modifier.height(6.dp))

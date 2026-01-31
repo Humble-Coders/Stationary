@@ -121,7 +121,10 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                     // Take read permission to prevent expiration
                     takeUriPermission(uri)
                     Log.d("MainActivity", "Received shared file: $uri")
-                    sharedFilesData.value = SharedFilesData(listOf(uri))
+                    // Accumulate files - add to existing pending files instead of replacing
+                    val existingFiles = sharedFilesData.value?.uris ?: emptyList()
+                    val newFiles = existingFiles + listOf(uri)
+                    sharedFilesData.value = SharedFilesData(newFiles)
                 }
             }
             Intent.ACTION_SEND_MULTIPLE -> {
@@ -135,7 +138,10 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
                     // Take read permission for all URIs to prevent expiration
                     uris.forEach { uri -> takeUriPermission(uri) }
                     Log.d("MainActivity", "Received ${uris.size} shared files")
-                    sharedFilesData.value = SharedFilesData(uris)
+                    // Accumulate files - add to existing pending files instead of replacing
+                    val existingFiles = sharedFilesData.value?.uris ?: emptyList()
+                    val newFiles = existingFiles + uris
+                    sharedFilesData.value = SharedFilesData(newFiles)
                 }
             }
         }
