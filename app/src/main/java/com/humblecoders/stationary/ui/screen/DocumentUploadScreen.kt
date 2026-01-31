@@ -48,6 +48,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Store
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -247,24 +248,12 @@ fun DocumentUploadScreen(
         }
     }
 
-    // Handle non-PDF upload success
-    var previousOrderId by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(uiState.orderId, uiState.isUploading) {
-        val currentOrderId = uiState.orderId
-
-        // Check if new order was created and upload finished
-        if (currentOrderId != null &&
-            currentOrderId != previousOrderId &&
-            !uiState.isUploading &&
-            uiState.currentFileType != FileType.PDF) {
-
-            previousOrderId = currentOrderId
-            showSuccessDialog = true
-
+    // Handle non-PDF upload success (images, documents, etc.)
+    LaunchedEffect(uiState.showNonPdfSuccessDialog) {
+        if (uiState.showNonPdfSuccessDialog) {
+            // Auto dismiss after 5 seconds
             delay(5000)
-            showSuccessDialog = false
-
-            viewModel.clearState()
+            viewModel.dismissNonPdfSuccessDialog()
             onNavigateBack()
         }
     }
@@ -313,9 +302,14 @@ fun DocumentUploadScreen(
         )
     }
 
-    // Success dialog
+    // Payment success dialog (for PDF orders)
     if (showSuccessDialog) {
         PaymentSuccessDialog()
+    }
+    
+    // Non-PDF upload success dialog (for images, documents, etc.)
+    if (uiState.showNonPdfSuccessDialog) {
+        NonPdfUploadSuccessDialog()
     }
     
     // Missing settings dialog
@@ -440,6 +434,154 @@ private fun PaymentSuccessDialog() {
                     textAlign = TextAlign.Center,
                     lineHeight = 20.sp
                 )
+
+                Spacer(Modifier.height(24.dp))
+
+                // Animated progress indicator
+                CircularProgressIndicator(
+                    modifier = Modifier.size(32.dp),
+                    color = SuccessGreen,
+                    strokeWidth = 3.dp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NonPdfUploadSuccessDialog() {
+    Dialog(onDismissRequest = { }) {
+        val infiniteTransition = rememberInfiniteTransition(label = "nonpdf_success_animation")
+
+        val scale by infiniteTransition.animateFloat(
+            initialValue = 0.95f,
+            targetValue = 1.05f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1000, easing = EaseInOutCubic),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "scale_animation"
+        )
+
+        val rotation by infiniteTransition.animateFloat(
+            initialValue = -5f,
+            targetValue = 5f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(800, easing = EaseInOutCubic),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "rotation_animation"
+        )
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(32.dp),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = CardWhite),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Animated checkmark
+                Box(
+                    modifier = Modifier.size(120.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    // Outer pulsing circle
+                    Surface(
+                        modifier = Modifier
+                            .size(120.dp)
+                            .scale(scale),
+                        shape = CircleShape,
+                        color = SuccessGreen.copy(alpha = 0.2f)
+                    ) {}
+
+                    // Middle circle
+                    Surface(
+                        modifier = Modifier.size(90.dp),
+                        shape = CircleShape,
+                        color = SuccessGreen.copy(alpha = 0.3f)
+                    ) {}
+
+                    // Inner circle with checkmark
+                    Surface(
+                        modifier = Modifier.size(70.dp),
+                        shape = CircleShape,
+                        color = SuccessGreen
+                    ) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .rotate(rotation)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(24.dp))
+
+                Text(
+                    text = "Order Submitted!",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                Text(
+                    text = "Your files have been uploaded successfully.",
+                    fontSize = 14.sp,
+                    color = TextSecondary,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 20.sp
+                )
+
+                Spacer(Modifier.height(16.dp))
+
+                // Pay at shop notice
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = BlueBtn.copy(alpha = 0.1f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Store,
+                            contentDescription = null,
+                            tint = BlueBtn,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            text = "Please pay at the shop\nwhen you collect your order",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = BlueBtn,
+                            textAlign = TextAlign.Center,
+                            lineHeight = 20.sp
+                        )
+                    }
+                }
 
                 Spacer(Modifier.height(24.dp))
 

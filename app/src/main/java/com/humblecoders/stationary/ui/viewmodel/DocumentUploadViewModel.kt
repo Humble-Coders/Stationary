@@ -45,7 +45,8 @@ data class DocumentUploadUiState(
     val shopId: String = "",
     val canAddMoreFiles: Boolean = true,
     val pricePerPage: PricePerPage = PricePerPage(), // Add prices from Firestore
-    val filesWithMissingSettings: List<Pair<Int, String>> = emptyList() // File number and name pairs
+    val filesWithMissingSettings: List<Pair<Int, String>> = emptyList(), // File number and name pairs
+    val showNonPdfSuccessDialog: Boolean = false // Show success dialog for non-PDF uploads
 )
 
 class DocumentUploadViewModel(
@@ -817,6 +818,11 @@ class DocumentUploadViewModel(
         _uiState.value = _uiState.value.copy(filesWithMissingSettings = emptyList())
     }
     
+    fun dismissNonPdfSuccessDialog() {
+        _uiState.value = _uiState.value.copy(showNonPdfSuccessDialog = false)
+        clearState()
+    }
+    
     fun clearAllUserData() {
         Log.d("DocumentUploadVM", "Clearing all user data")
         _uiState.value = _uiState.value.copy(
@@ -929,11 +935,9 @@ class DocumentUploadViewModel(
                         _uiState.value = _uiState.value.copy(
                             isUploading = false,
                             orderId = response.orderId,
-                            uploadProgress = 1f
+                            uploadProgress = 1f,
+                            showNonPdfSuccessDialog = true
                         )
-                        // Clear state and call success callback
-                        clearState()
-                        onOrderCreated()
                     },
                     onFailure = { e ->
                         Log.e("DocumentUploadVM", "❌ Failed to create order via Cloud Function", e)
