@@ -18,7 +18,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Print
-import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.Store
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Info
@@ -58,17 +57,10 @@ fun HomeScreen(
     homeViewModel: HomeViewModel,
     onNavigateToUpload: (String) -> Unit,
     onNavigateToOrderHistory: () -> Unit,
-    onNavigateToProfile: () -> Unit,
-    onNavigateToActiveOrders: () -> Unit = {}
+    onNavigateToProfile: () -> Unit
 ) {
     val homeUiState by homeViewModel.uiState.collectAsState()
     val coroutineScope = rememberCoroutineScope()
-
-    // Filter orders to show only SUBMITTED and QUEUED
-    val activeOrders = homeUiState.orders.filter { order ->
-        order.orderStatus.toString() == "SUBMITTED" ||
-                order.orderStatus.toString() == "QUEUED"
-    }
 
     val pullRefreshState = rememberPullRefreshState(
         refreshing = homeUiState.isLoading,
@@ -148,14 +140,6 @@ fun HomeScreen(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Active orders notification bar
-                if (activeOrders.isNotEmpty()) {
-                    ActiveOrdersBar(
-                        orderCount = activeOrders.size,
-                        onClick = onNavigateToActiveOrders
-                    )
-                }
-
                 // Shop cards section
                 Text(
                     text = "Available Shops",
@@ -183,7 +167,7 @@ fun HomeScreen(
                 )
 
                 // Loading indicator
-                if (homeUiState.isLoading && activeOrders.isEmpty()) {
+                if (homeUiState.isLoading) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -232,75 +216,6 @@ fun HomeScreen(
                 modifier = Modifier.align(Alignment.TopCenter),
                 backgroundColor = CardWhite,
                 contentColor = BlueBtn
-            )
-        }
-    }
-}
-
-@Composable
-private fun ActiveOrdersBar(
-    orderCount: Int,
-    onClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = BlueBtn
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Surface(
-                    shape = CircleShape,
-                    color = Color.White,
-                    modifier = Modifier.size(40.dp)
-                ) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ShoppingBag,
-                            contentDescription = null,
-                            tint = BlueBtn,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-
-                Column {
-                    Text(
-                        text = "Active Orders",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                    Text(
-                        text = "$orderCount ${if (orderCount == 1) "order" else "orders"} in progress",
-                        fontSize = 13.sp,
-                        color = Color.White.copy(alpha = 0.9f)
-                    )
-                }
-            }
-
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                contentDescription = "View Orders",
-                tint = Color.White,
-                modifier = Modifier.size(24.dp)
             )
         }
     }

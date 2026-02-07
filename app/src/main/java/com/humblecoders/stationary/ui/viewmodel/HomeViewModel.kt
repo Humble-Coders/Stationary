@@ -151,15 +151,13 @@ class HomeViewModel(
     }
 
     fun refreshOrders() {
-        val customerId = _uiState.value.customerId
-        if (customerId.isEmpty()) {
-            Log.w("HomeViewModel", "Cannot refresh orders: customerId is empty")
-            return
-        }
-
-        Log.d("HomeViewModel", "Refreshing orders for customer: $customerId")
+        if (_uiState.value.customerId.isEmpty()) return
+        // Listener already pushes real-time updates; just show brief refresh feedback without starting another listener
         _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-        observeUserOrders()
+        viewModelScope.launch {
+            delay(400)
+            _uiState.value = _uiState.value.copy(isLoading = false)
+        }
     }
 
 

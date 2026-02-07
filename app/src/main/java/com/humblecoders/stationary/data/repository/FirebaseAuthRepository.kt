@@ -8,6 +8,8 @@ import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
@@ -23,6 +25,9 @@ class FirebaseAuthRepository(
     private val firebaseAuth: FirebaseAuth,
     private val context: Context
 ) {
+
+    // Mutex to prevent concurrent duplicate Google sign-in calls
+    private val googleSignInMutex = Mutex()
 
     private val googleSignInClient: GoogleSignInClient by lazy {
         val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
@@ -73,33 +78,36 @@ class FirebaseAuthRepository(
     }
 
     suspend fun handleGoogleSignInResult(data: Intent?): Result<Unit> {
-        return try {
-            Log.d("AuthRepository", "Processing Google Sign-In result")
+        // Use mutex to prevent concurrent duplicate calls from both ViewModels
+        return googleSignInMutex.withLock {
+            try {
+                Log.d("AuthRepository", "Processing Google Sign-In result")
 
-            if (data == null) {
-                Log.e("AuthRepository", "Google Sign-In data is null")
-                return Result.failure(Exception("Google Sign-In was cancelled or failed"))
+                if (data == null) {
+                    Log.e("AuthRepository", "Google Sign-In data is null")
+                    return@withLock Result.failure(Exception("Google Sign-In was cancelled or failed"))
+                }
+
+                val task = GoogleSignIn.getSignedInAccountFromIntent(data)
+                val account = task.getResult(ApiException::class.java)
+
+                Log.d("AuthRepository", "Google account retrieved: ${account.email}")
+
+                val emailExists = checkIfEmailExistsInEmailAuth(account.email)
+
+                if (emailExists) {
+                    Log.d("AuthRepository", "Email ${account.email} already registered with email/password")
+                    return@withLock Result.failure(Exception("This email is already registered with email and password. Please sign in using your email and password instead."))
+                }
+
+                signInWithGoogle(account)
+            } catch (e: ApiException) {
+                Log.e("AuthRepository", "Google sign-in ApiException: ${e.statusCode}", e)
+                Result.failure(Exception("Google sign-in failed: ${getGoogleSignInErrorMessage(e.statusCode)}"))
+            } catch (e: Exception) {
+                Log.e("AuthRepository", "Google sign-in general exception", e)
+                Result.failure(Exception("Google sign-in error: ${e.message}"))
             }
-
-            val task = GoogleSignIn.getSignedInAccountFromIntent(data)
-            val account = task.getResult(ApiException::class.java)
-
-            Log.d("AuthRepository", "Google account retrieved: ${account.email}")
-
-            val emailExists = checkIfEmailExistsInEmailAuth(account.email)
-
-            if (emailExists) {
-                Log.d("AuthRepository", "Email ${account.email} already registered with email/password")
-                return Result.failure(Exception("This email is already registered with email and password. Please sign in using your email and password instead."))
-            }
-
-            signInWithGoogle(account)
-        } catch (e: ApiException) {
-            Log.e("AuthRepository", "Google sign-in ApiException: ${e.statusCode}", e)
-            Result.failure(Exception("Google sign-in failed: ${getGoogleSignInErrorMessage(e.statusCode)}"))
-        } catch (e: Exception) {
-            Log.e("AuthRepository", "Google sign-in general exception", e)
-            Result.failure(Exception("Google sign-in error: ${e.message}"))
         }
     }
 
@@ -170,7 +178,7 @@ class FirebaseAuthRepository(
         }
     }
 
-    suspend fun signInWithGoogle(account: GoogleSignInAccount): Result<Unit> {
+    private suspend fun signInWithGoogle(account: GoogleSignInAccount): Result<Unit> {
         return try {
             withContext(Dispatchers.IO) {
                 Log.d("AuthRepository", "Creating Firebase credential")
@@ -190,10 +198,18 @@ class FirebaseAuthRepository(
                 val isNewUser = authResult.additionalUserInfo?.isNewUser == true
                 Log.d("AuthRepository", "Is new user: $isNewUser")
 
-                if (isNewUser) {
-                    createGoogleUserProfile(user.uid, account)
-                } else {
-                    updateExistingUserWithGoogleData(user.uid, account)
+                try {
+                    if (isNewUser) {
+                        createGoogleUserProfile(user.uid, account)
+                    } else {
+                        updateExistingUserWithGoogleData(user.uid, account)
+                    }
+                } catch (profileException: Exception) {
+                    // Profile creation/update failed after Firebase auth succeeded.
+                    // Sign out so the user is not left in a half-authenticated state.
+                    Log.e("AuthRepository", "Profile operation failed, signing out Firebase user", profileException)
+                    firebaseAuth.signOut()
+                    throw profileException
                 }
 
                 Log.d("AuthRepository", "Google sign-in completed successfully")
@@ -201,6 +217,8 @@ class FirebaseAuthRepository(
             }
         } catch (e: Exception) {
             Log.e("AuthRepository", "Google sign-in error: ${e.message}", e)
+            // Ensure user is not left signed in to Firebase on any failure
+            firebaseAuth.signOut()
             Result.failure(e)
         }
     }

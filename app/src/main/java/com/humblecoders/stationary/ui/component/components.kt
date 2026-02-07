@@ -222,7 +222,7 @@ fun OrderCard(
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = if (order.fileType == ".docx")
+                            imageVector = if (com.humblecoders.stationary.data.model.FileType.getDisplayNameFromFileTypeString(order.fileType) == "Word")
                                 Icons.Default.Description
                             else
                                 Icons.Outlined.Description,
@@ -410,16 +410,6 @@ private fun getDocumentCount(order: PrintOrder): Int {
 
 
 
-private fun getFileTypeFromExtension(extension: String): String {
-    return when (extension) {
-        ".pdf" -> "PDF"
-        ".docx" -> "Word"
-        ".pptx" -> "PowerPoint"
-        ".jpg" -> "Image" // Add this line
-        else -> "Document"
-    }
-}
-
 // Get display document name from individualDocuments
 private fun getDisplayDocumentName(order: PrintOrder): String {
     return when {
@@ -429,7 +419,7 @@ private fun getDisplayDocumentName(order: PrintOrder): String {
             fileName ?: "Unknown document"
         }
         else -> {
-            "${order.documentCount} ${getFileTypeFromExtension(order.fileType)} files"
+            "${order.documentCount} ${com.humblecoders.stationary.data.model.FileType.getDisplayNameFromFileTypeString(order.fileType)} files"
         }
     }
 }

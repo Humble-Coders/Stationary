@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -36,6 +37,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -467,15 +469,6 @@ private fun PaymentSuccessDialog() {
                     textAlign = TextAlign.Center,
                     lineHeight = 20.sp
                 )
-
-                Spacer(Modifier.height(24.dp))
-
-                // Animated progress indicator
-                CircularProgressIndicator(
-                    modifier = Modifier.size(32.dp),
-                    color = SuccessGreen,
-                    strokeWidth = 3.dp
-                )
             }
         }
     }
@@ -615,15 +608,6 @@ private fun NonPdfUploadSuccessDialog() {
                         )
                     }
                 }
-
-                Spacer(Modifier.height(24.dp))
-
-                // Animated progress indicator
-                CircularProgressIndicator(
-                    modifier = Modifier.size(32.dp),
-                    color = SuccessGreen,
-                    strokeWidth = 3.dp
-                )
             }
         }
     }
@@ -1024,11 +1008,12 @@ private fun LoadingFilesScreen(
             Surface(
                 color = CardWhite,
                 shadowElevation = 2.dp,
-                modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars)
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .windowInsetsPadding(WindowInsets.statusBars)
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -1112,11 +1097,12 @@ private fun UploadScreen(
             Surface(
                 color = CardWhite,
                 shadowElevation = 2.dp,
-                modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars)
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .windowInsetsPadding(WindowInsets.statusBars)
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -1225,7 +1211,7 @@ private fun UploadScreen(
                     Spacer(Modifier.height(16.dp))
 
                     Text(
-                        text = "Supported: PDF, Word, PowerPoint, Images\nMax: 10 files (50 for images)",
+                        text = "Supported: PDF, Word, PowerPoint, Images\nMax: 50 images, 10 documents. Mix allowed.",
                         fontSize = 12.sp,
                         color = TextSecondary,
                         textAlign = TextAlign.Center
@@ -1249,9 +1235,10 @@ private fun DocumentsScreen(
     onProceedWithPayment: () -> Unit,
     onProceedDirect: () -> Unit
 ) {
-    // PDF files use pager, non-PDF files use lazy column
-    val isPdfFiles = uiState.currentFileType == FileType.PDF
-    val pagerState = if (isPdfFiles) rememberPagerState(pageCount = { uiState.documents.size }) else null
+    // Use pager only when all files are PDF; otherwise use list (supports mixed types)
+    val isAllPdf = uiState.currentFileType == FileType.PDF
+    val isMixedTypes = uiState.currentFileType == null && uiState.documents.isNotEmpty()
+    val pagerState = if (isAllPdf) rememberPagerState(pageCount = { uiState.documents.size }) else null
     val coroutineScope = rememberCoroutineScope()
 
     Scaffold(
@@ -1259,9 +1246,9 @@ private fun DocumentsScreen(
             Surface(
                 color = CardWhite,
                 shadowElevation = 2.dp,
-                modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars)
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Column {
+                Column(modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars)) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1280,10 +1267,10 @@ private fun DocumentsScreen(
                         // Centered Add Files button
                         OutlinedButton(
                             onClick = onAddMore,
-                            enabled = !uiState.isUploading && !paymentState.isProcessing && uiState.orderId == null,
+                            enabled = !uiState.isUploading && !paymentState.isProcessing && uiState.orderId == null && uiState.canAddMoreFiles,
                             modifier = Modifier.height(36.dp),
                             shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.5.dp, if (!uiState.isUploading && !paymentState.isProcessing && uiState.orderId == null) BlueBtn else BorderGray),
+                            border = BorderStroke(1.5.dp, if (!uiState.isUploading && !paymentState.isProcessing && uiState.orderId == null && uiState.canAddMoreFiles) BlueBtn else BorderGray),
                             colors = ButtonDefaults.outlinedButtonColors(
                                 contentColor = BlueBtn,
                                 disabledContentColor = TextSecondary
@@ -1293,13 +1280,13 @@ private fun DocumentsScreen(
                             Icon(
                                 imageVector = Icons.Default.Add,
                                 contentDescription = null,
-                                tint = if (!uiState.isUploading && !paymentState.isProcessing && uiState.orderId == null) BlueBtn else TextSecondary,
+                                tint = if (!uiState.isUploading && !paymentState.isProcessing && uiState.orderId == null && uiState.canAddMoreFiles) BlueBtn else TextSecondary,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(Modifier.width(6.dp))
                             Text(
                                 "Add Files",
-                                color = if (!uiState.isUploading && !paymentState.isProcessing && uiState.orderId == null) BlueBtn else TextSecondary,
+                                color = if (!uiState.isUploading && !paymentState.isProcessing && uiState.orderId == null && uiState.canAddMoreFiles) BlueBtn else TextSecondary,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
@@ -1309,8 +1296,8 @@ private fun DocumentsScreen(
                         Spacer(Modifier.width(48.dp))
                     }
 
-                    // Page indicator with navigation arrows for PDF
-                    if (isPdfFiles && pagerState != null) {
+                    // Page indicator with navigation arrows when all PDF
+                    if (isAllPdf && pagerState != null) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1366,13 +1353,15 @@ private fun DocumentsScreen(
                                     contentDescription = "Next file",
                                     tint = if (pagerState.currentPage < uiState.documents.size - 1 && !uiState.isUploading && !paymentState.isProcessing && uiState.orderId == null) 
                                         TextPrimary else BorderGray,
-                                    modifier = Modifier.size(18.dp).rotate(180f)
+                                    modifier = Modifier
+                                        .size(18.dp)
+                                        .rotate(180f)
                                 )
                             }
                         }
                     } else {
                         Text(
-                            text = "${uiState.documents.size} ${if (uiState.documents.size == 1) "file" else "files"}",
+                            text = "${uiState.documents.size} ${if (uiState.documents.size == 1) "file" else "files"}${if (isMixedTypes) " (mixed)" else ""}",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = TextSecondary,
@@ -1394,8 +1383,8 @@ private fun DocumentsScreen(
                 .background(BackgroundGray)
                 .padding(paddingValues)
         ) {
-            if (isPdfFiles && pagerState != null) {
-                // Horizontal pager for PDF documents
+            if (isAllPdf && pagerState != null) {
+                // Horizontal pager when all documents are PDF
                 HorizontalPager(
                     state = pagerState,
                     modifier = Modifier
@@ -1423,7 +1412,8 @@ private fun DocumentsScreen(
                     }
                 }
             } else {
-                // Lazy column for non-PDF documents
+                // List for non-PDF or mixed types: PDFs get full card with settings, others get simple card
+                val hasMultipleTypes = uiState.documents.map { it.fileType }.distinct().size > 1
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1431,91 +1421,127 @@ private fun DocumentsScreen(
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(uiState.documents, key = { it.id }) { document ->
-                        NonPdfDocumentCard(
-                            document = document,
-                            isProcessing = uiState.isUploading || paymentState.isProcessing || uiState.orderId != null,
-                            onRemove = { onRemoveDocument(document.id) }
-                        )
+                    itemsIndexed(uiState.documents, key = { _, doc -> doc.id }) { index, document ->
+                        val isFirstOfType = uiState.documents.indexOfFirst { it.fileType == document.fileType } == index
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            if (hasMultipleTypes && isFirstOfType) {
+                                DocumentTypeHeader(title = document.fileType.displayName)
+                            }
+                            if (document.fileType == FileType.PDF) {
+                                DocumentCard(
+                                    document = document,
+                                    pricePerPage = uiState.pricePerPage,
+                                    isProcessing = uiState.isUploading || paymentState.isProcessing || uiState.orderId != null,
+                                    onRemove = { onRemoveDocument(document.id) },
+                                    onUpdateSettings = { settings -> onUpdateSettings(document.id, settings) },
+                                    onUpdatePageCount = { pageCount -> onUpdatePageCount(document.id, pageCount) }
+                                )
+                            } else {
+                                NonPdfDocumentCard(
+                                    document = document,
+                                    isProcessing = uiState.isUploading || paymentState.isProcessing || uiState.orderId != null,
+                                    onRemove = { onRemoveDocument(document.id) }
+                                )
+                            }
+                        }
                     }
+                   item { Spacer(Modifier.height(6.dp)) }
                 }
             }
-
-            // Bottom section
+            Spacer(Modifier.height(12.dp))
+            // Bottom section (no shadow)
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 color = CardWhite,
-                shadowElevation = 8.dp
+                shadowElevation = 0.dp
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp)
                 ) {
-                    // Proceed button
+                    // Proceed button (whole button fills blue/grey as progress when processing)
+                    val isProcessing = uiState.isUploading || paymentState.isProcessing || uiState.orderId != null
+                    val progressFraction = when {
+                        uiState.isUploading -> uiState.uploadProgress.coerceIn(0f, 1f)
+                        paymentState.isProcessing -> 1f
+                        else -> 0f
+                    }
                     Button(
                         onClick = {
-                            if (isPdfFiles) {
+                            if (uiState.documents.any { it.fileType == FileType.PDF }) {
                                 onProceedWithPayment()
                             } else {
                                 onProceedDirect()
                             }
                         },
-                        enabled = !uiState.isUploading && !paymentState.isProcessing && uiState.orderId == null,
+                        enabled = !isProcessing,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp),
                         shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = BlueBtn)
+                        colors = ButtonDefaults.buttonColors(containerColor = BlueBtn),
+                        elevation = ButtonDefaults.buttonElevation(
+                            defaultElevation = 0.dp,
+                            pressedElevation = 0.dp,
+                            hoveredElevation = 0.dp,
+                            focusedElevation = 0.dp,
+                            disabledElevation = 0.dp
+                        ),
+                        contentPadding = PaddingValues(0.dp)
                     ) {
-                        when {
-                            uiState.isUploading -> {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(24.dp),
-                                    color = Color(0xFF93C5FD), // Light blue for visibility
-                                    strokeWidth = 2.dp
+                        if (isProcessing) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(12.dp))
+                            ) {
+                                // Grey track (full size)
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .fillMaxHeight()
+                                        .background(BorderGray)
                                 )
-                                Spacer(Modifier.width(8.dp))
-                                Surface(
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = Color.White.copy(alpha = 0.25f)
+                                // Blue fill from left by progress
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth(progressFraction)
+                                        .fillMaxHeight()
+                                        .background(BlueBtn)
+                                )
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
                                 ) {
                                     Text(
-                                        "Processing... ${(uiState.uploadProgress * 100).toInt()}%",
-                                        color = Color(0xFF1E40AF), // Dark blue for good contrast
+                                        text = when {
+                                            uiState.isUploading -> "Processing... ${(uiState.uploadProgress * 100).toInt()}%"
+                                            paymentState.isProcessing -> "Processing Payment..."
+                                            else -> "Processing..."
+                                        },
+                                        color = if (progressFraction >= 0.5f) Color.White else TextPrimary,
                                         fontSize = 16.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        fontWeight = FontWeight.Bold
                                     )
                                 }
                             }
-                            paymentState.isProcessing -> {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(24.dp),
-                                    color = Color.White,
-                                    strokeWidth = 2.dp
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    "Processing Payment...",
-                                    color = Color.White,
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            else -> {
-                                Icon(
-                                    imageVector = Icons.Default.CheckCircle,
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    "Proceed",
-                                    color = Color.White,
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                "Proceed",
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
 
@@ -1557,6 +1583,17 @@ private fun DocumentsScreen(
             }
         }
     }
+}
+
+@Composable
+private fun DocumentTypeHeader(title: String) {
+    Text(
+        text = title,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = TextSecondary,
+        modifier = Modifier.padding(start = 4.dp, top = 4.dp, bottom = 0.dp)
+    )
 }
 
 @Composable
@@ -1616,34 +1653,15 @@ private fun NonPdfDocumentCard(
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = TextPrimary,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Spacer(Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = formatFileSize(document.fileSize),
-                        fontSize = 12.sp,
-                        color = TextSecondary
-                    )
-                    Text(
-                        text = " • ${document.fileType.displayName}",
-                        fontSize = 12.sp,
-                        color = TextSecondary
-                    )
-                }
-                Surface(
-                    shape = RoundedCornerShape(4.dp),
-                    color = SuccessGreen.copy(alpha = 0.15f)
-                ) {
-                    Text(
-                        text = "Ready to print",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = SuccessGreen,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                }
+                Text(
+                    text = document.fileType.displayName,
+                    fontSize = 12.sp,
+                    color = TextSecondary
+                )
             }
 
             // Remove button
@@ -1680,26 +1698,23 @@ private fun DocumentCard(
         )
     } else null
 
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        // Document preview card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = CardWhite),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            Card(
+    // Single combined card: preview/name + optional page input + print settings (for PDF)
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = CardWhite),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // Preview row: icon, name, remove
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(10.dp),
-                shape = RoundedCornerShape(10.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFF3F4F6)),
-                border = BorderStroke(1.dp, BorderGray)
+                    .background(CardWhite)
+                    .padding(12.dp)
             ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
@@ -1707,7 +1722,6 @@ private fun DocumentCard(
                         modifier = Modifier.weight(1f),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // File icon or preview
                         if (document.previewBitmap != null) {
                             Image(
                                 bitmap = document.previewBitmap.asImageBitmap(),
@@ -1748,20 +1762,13 @@ private fun DocumentCard(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            Spacer(Modifier.height(4.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (document.fileType == FileType.PDF) {
+                                Spacer(Modifier.height(4.dp))
                                 Text(
-                                    text = formatFileSize(document.fileSize),
+                                    text = "${document.getEffectivePageCount()} pages",
                                     fontSize = 12.sp,
                                     color = TextSecondary
                                 )
-                                if (document.fileType == FileType.PDF) {
-                                    Text(
-                                        text = " • ${document.getEffectivePageCount()} pages",
-                                        fontSize = 12.sp,
-                                        color = TextSecondary
-                                    )
-                                }
                             }
                         }
                     }
@@ -1780,16 +1787,9 @@ private fun DocumentCard(
                     }
                 }
             }
-        }
 
-        // Page count input for PDFs with detection issues
-        if (document.needsUserPageInput) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = CardWhite),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
+            // Page count input for PDFs with detection issues
+            if (document.needsUserPageInput) {
                 Column(modifier = Modifier.padding(14.dp)) {
                     Text(
                         text = "Number of Pages",
@@ -1821,22 +1821,23 @@ private fun DocumentCard(
                     )
                 }
             }
-        }
 
-        // Show settings only for PDF files
-        if (document.fileType == FileType.PDF) {
-            PrintSettingsCard(
-                document = document,
-                pricePerPage = pricePerPage,
-                isProcessing = isProcessing,
-                onUpdateSettings = onUpdateSettings,
-                pageOverlapError = pageOverlapError
-            )
+            // Print settings (for PDF) — same card, no separate card
+            if (document.fileType == FileType.PDF) {
+                HorizontalDivider(color = BorderGray)
+                PrintSettingsContent(
+                    document = document,
+                    pricePerPage = pricePerPage,
+                    isProcessing = isProcessing,
+                    onUpdateSettings = onUpdateSettings,
+                    pageOverlapError = pageOverlapError
+                )
+            }
         }
-        
-        // Spacer to allow scrolling to see number of copies
-        Spacer(Modifier.height(24.dp))
     }
+
+    // Spacer to allow scrolling to see number of copies
+    Spacer(Modifier.height(24.dp))
 }
 
 @Composable
@@ -1855,20 +1856,16 @@ private fun SupportingTextContent(
 }
 
 @Composable
-private fun PrintSettingsCard(
+private fun PrintSettingsContent(
     document: DocumentItem,
     pricePerPage: PricePerPage,
     isProcessing: Boolean,
     onUpdateSettings: (PrintSettings) -> Unit,
     pageOverlapError: String?
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = CardWhite),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+    Column(modifier = Modifier
+        .fillMaxWidth()
+        .padding(12.dp)) {
             // Black & White Pages (removed "Print Type" heading)
             Column {
                 Row(
@@ -1911,29 +1908,23 @@ private fun PrintSettingsCard(
                 Spacer(Modifier.height(6.dp))
                 val maxPages = document.getEffectivePageCount()
                 val bwPages = document.printSettings.customBWPages
-                val hasRangeAndComma = bwPages.contains("-") && bwPages.contains(",")
-                val hasInvalidBWPages = bwPages.isNotEmpty() && (hasRangeAndComma || !isValidPageRange(bwPages, maxPages))
-                
+                val hasInvalidBWPages = bwPages.isNotEmpty() && !isValidPageRange(bwPages, maxPages)
+
                 OutlinedTextField(
                     value = document.printSettings.customBWPages,
                     onValueChange = { value: String ->
-                        onUpdateSettings(document.printSettings.copy(customBWPages = value))
+                        val filtered = value.filter { it.isDigit() || it == ',' || it == '-' }
+                        onUpdateSettings(document.printSettings.copy(customBWPages = filtered))
                     },
                     enabled = !isProcessing,
                     placeholder = {
                         Text(
-                            text = "e.g., 5-10 or 1,2,3 (max: $maxPages)",
+                            text = "e.g. 1,2-4,5 (max: $maxPages)",
                             color = Color(0xFF9CA3AF),
                             fontSize = 15.sp
                         )
                     },
-                    supportingText = {
-                        SupportingTextContent(
-                            maxPages = maxPages,
-                            text = "Max pages: $maxPages",
-                            isError = hasInvalidBWPages
-                        )
-                    },
+
                     isError = hasInvalidBWPages,
                     maxLines = 1,
                     keyboardOptions = KeyboardOptions(
@@ -1958,15 +1949,26 @@ private fun PrintSettingsCard(
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Medium,
                         color = TextPrimary
-                    )
+                    ),
+                    trailingIcon = {
+                        if (bwPages.isNotEmpty()) {
+                            IconButton(
+                                onClick = { onUpdateSettings(document.printSettings.copy(customBWPages = "")) },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Clear",
+                                    modifier = Modifier.size(18.dp),
+                                    tint = TextSecondary
+                                )
+                            }
+                        }
+                    }
                 )
                 if (hasInvalidBWPages) {
                     Spacer(Modifier.height(4.dp))
-                    val errorMessage = if (bwPages.contains("-") && bwPages.contains(",")) {
-                        "Cannot mix ranges and commas. Use either '5-10' or '1,2,3'"
-                    } else {
-                        "Page numbers cannot exceed $maxPages"
-                    }
+                    val errorMessage = getPageRangeErrorMessage(bwPages, maxPages)
                     Text(
                         text = errorMessage,
                         color = ErrorRed,
@@ -2020,29 +2022,23 @@ private fun PrintSettingsCard(
                 Spacer(Modifier.height(6.dp))
                 val maxPages = document.getEffectivePageCount()
                 val colorPages = document.printSettings.customColorPages
-                val hasRangeAndComma = colorPages.contains("-") && colorPages.contains(",")
-                val hasInvalidColorPages = colorPages.isNotEmpty() && (hasRangeAndComma || !isValidPageRange(colorPages, maxPages))
-                
+                val hasInvalidColorPages = colorPages.isNotEmpty() && !isValidPageRange(colorPages, maxPages)
+
                 OutlinedTextField(
                     value = document.printSettings.customColorPages,
                     onValueChange = { value: String ->
-                        onUpdateSettings(document.printSettings.copy(customColorPages = value))
+                        val filtered = value.filter { it.isDigit() || it == ',' || it == '-' }
+                        onUpdateSettings(document.printSettings.copy(customColorPages = filtered))
                     },
                     enabled = !isProcessing,
                     placeholder = {
                         Text(
-                            text = "e.g., 5-10 or 1,2,3 (max: $maxPages)",
+                            text = "e.g. 1,2-4,5 (max: $maxPages)",
                             color = Color(0xFF9CA3AF),
                             fontSize = 15.sp
                         )
                     },
-                    supportingText = {
-                        SupportingTextContent(
-                            maxPages = maxPages,
-                            text = "Max pages: $maxPages",
-                            isError = hasInvalidColorPages
-                        )
-                    },
+                   
                     isError = hasInvalidColorPages,
                     maxLines = 1,
                     keyboardOptions = KeyboardOptions(
@@ -2067,15 +2063,26 @@ private fun PrintSettingsCard(
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Medium,
                         color = TextPrimary
-                    )
+                    ),
+                    trailingIcon = {
+                        if (colorPages.isNotEmpty()) {
+                            IconButton(
+                                onClick = { onUpdateSettings(document.printSettings.copy(customColorPages = "")) },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Clear",
+                                    modifier = Modifier.size(18.dp),
+                                    tint = TextSecondary
+                                )
+                            }
+                        }
+                    }
                 )
                 if (hasInvalidColorPages) {
                     Spacer(Modifier.height(4.dp))
-                    val errorMessage = if (colorPages.contains("-") && colorPages.contains(",")) {
-                        "Cannot mix ranges and commas. Use either '5-10' or '1,2,3'"
-                    } else {
-                        "Page numbers cannot exceed $maxPages"
-                    }
+                    val errorMessage = getPageRangeErrorMessage(colorPages, maxPages)
                     Text(
                         text = errorMessage,
                         color = ErrorRed,
@@ -2325,94 +2332,65 @@ private fun PrintSettingsCard(
                 )
             }
         }
-    }
 }
 
-@SuppressLint("DefaultLocale")
-private fun formatFileSize(sizeInBytes: Long): String {
-    return when {
-        sizeInBytes < 1024 -> "$sizeInBytes B"
-        sizeInBytes < 1024 * 1024 -> "${sizeInBytes / 1024} KB"
-        else -> String.format("%.1f MB", sizeInBytes / (1024.0 * 1024.0))
-    }
-}
-
+/**
+ * Validates page range format: comma-separated items, each item is a number or range (e.g. 1,2-4,5).
+ * Rejects: trailing comma, trailing hyphen, multiple commas/hyphens, empty after comma/hyphen.
+ */
 private fun isValidPageRange(pageRange: String, maxPages: Int): Boolean {
     if (pageRange.isEmpty() || maxPages <= 0) return true
 
-    try {
-        val parts = pageRange.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-        
-        // Check if input contains both ranges and commas (not allowed)
-        val hasRange = parts.any { it.contains("-") }
-        val hasMultipleParts = parts.size > 1
-        
-        // If there's a range AND multiple parts (comma-separated), it's invalid
-        if (hasRange && hasMultipleParts) {
-            return false
-        }
-        
-        // If there's a range, it must be a single range (no commas)
-        if (hasRange) {
-            if (parts.size != 1) {
-                return false
-            }
-            val rangePart = parts[0]
-            val range = rangePart.split("-")
-            
-            // Allow partial ranges during typing (e.g., "1-" or "-5")
-            if (range.size == 1) {
-                // Partial range like "1-" or "-5" - allow during typing
-                val singlePart = range[0].trim()
-                if (singlePart.isNotEmpty()) {
-                    val num = singlePart.toIntOrNull()
-                    if (num != null && (num <= 0 || num > maxPages)) {
-                        return false
-                    }
-                }
-            } else if (range.size == 2) {
-                // Complete range like "1-5"
-                val startStr = range[0].trim()
-                val endStr = range[1].trim()
-                
-                // If either side is empty, it's a partial range - allow during typing
-                if (startStr.isEmpty() || endStr.isEmpty()) {
-                    // Validate the non-empty side if present
-                    val num = (if (startStr.isNotEmpty()) startStr else endStr).toIntOrNull()
-                    if (num != null && (num <= 0 || num > maxPages)) {
-                        return false
-                    }
-                    return true // Allow partial range
-                }
-                
-                // Both sides present - validate complete range
-                val start = startStr.toInt()
-                val end = endStr.toInt()
-                if (start <= 0 || end <= 0 || start > end || start > maxPages || end > maxPages) {
-                    return false
-                }
-            } else {
-                // More than one hyphen - invalid
-                return false
-            }
+    val parts = pageRange.split(",").map { it.trim() }
+    if (parts.any { it.isEmpty() }) return false
+
+    for (part in parts) {
+        if (part.contains("-")) {
+            val rangeParts = part.split("-")
+            if (rangeParts.size != 2) return false
+            val startStr = rangeParts[0].trim()
+            val endStr = rangeParts[1].trim()
+            if (startStr.isEmpty() || endStr.isEmpty()) return false
+            val start = startStr.toIntOrNull() ?: return false
+            val end = endStr.toIntOrNull() ?: return false
+            if (start <= 0 || end <= 0 || start > end || start > maxPages || end > maxPages) return false
         } else {
-            // No range - must be comma-separated individual pages
-            for (part in parts) {
-                val page = part.toIntOrNull()
-                if (page == null) {
-                    // Not a valid number - might be partial input, allow it
-                    continue
-                }
-                if (page <= 0 || page > maxPages) {
-                    return false
-                }
-            }
+            val page = part.toIntOrNull() ?: return false
+            if (page <= 0 || page > maxPages) return false
         }
-        return true
-    } catch (e: Exception) {
-        // Allow partial/invalid input during typing
-        return true
     }
+    return true
+}
+
+private fun getPageRangeErrorMessage(pageRange: String, maxPages: Int): String {
+    if (pageRange.isEmpty()) return "Enter page numbers (e.g. 1,2-4,5)"
+    val parts = pageRange.split(",").map { it.trim() }
+    if (parts.any { it.isEmpty() }) {
+        return "Remove trailing comma or use a number after comma"
+    }
+    for (part in parts) {
+        if (part.contains("-")) {
+            val rangeParts = part.split("-")
+            if (rangeParts.size != 2) return "Use only one hyphen per range (e.g. 2-4)"
+            val startStr = rangeParts[0].trim()
+            val endStr = rangeParts[1].trim()
+            if (startStr.isEmpty() || endStr.isEmpty()) {
+                return "Enter a number after hyphen (e.g. 2-4)"
+            }
+            val start = startStr.toIntOrNull()
+            val end = endStr.toIntOrNull()
+            if (start == null || end == null) return "Use numbers only"
+            if (start <= 0 || end <= 0) return "Page numbers must be at least 1"
+            if (start > end) return "Range start must be ≤ end (e.g. 2-4)"
+            if (start > maxPages || end > maxPages) return "Page numbers cannot exceed $maxPages"
+        } else {
+            val page = part.toIntOrNull()
+            if (page == null) return "Use numbers only"
+            if (page <= 0) return "Page numbers must be at least 1"
+            if (page > maxPages) return "Page numbers cannot exceed $maxPages"
+        }
+    }
+    return "Page numbers cannot exceed $maxPages"
 }
 
 private fun checkPageOverlap(bwPages: String, colorPages: String, maxPages: Int): String? {
@@ -2436,12 +2414,11 @@ private fun parsePageRangeToList(pageRange: String): List<Int> {
     if (pageRange.isEmpty()) return emptyList()
 
     val pages = mutableSetOf<Int>()
-    val parts = pageRange.split(",")
+    val parts = pageRange.split(",").map { it.trim() }.filter { it.isNotEmpty() }
 
     for (part in parts) {
-        val trimmed = part.trim()
-        if (trimmed.contains("-")) {
-            val range = trimmed.split("-")
+        if (part.contains("-")) {
+            val range = part.split("-")
             if (range.size == 2) {
                 val start = range[0].trim().toInt()
                 val end = range[1].trim().toInt()
@@ -2450,7 +2427,7 @@ private fun parsePageRangeToList(pageRange: String): List<Int> {
                 }
             }
         } else {
-            pages.add(trimmed.toInt())
+            pages.add(part.toInt())
         }
     }
 

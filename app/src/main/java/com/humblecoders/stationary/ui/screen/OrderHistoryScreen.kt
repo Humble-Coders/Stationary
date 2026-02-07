@@ -89,11 +89,12 @@ fun OrderHistoryScreen(
             Surface(
                 color = CardWhite,
                 shadowElevation = 2.dp,
-                modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars)
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .windowInsetsPadding(WindowInsets.statusBars)
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -268,32 +269,6 @@ private fun HistoryOrderCard(
                     }
                 }
 
-                if (order.paymentAmount > 0) {
-                    val paymentStatus = viewModel.getPaymentStatusDisplay(order)
-                    val isUnpaid = paymentStatus == "Unpaid"
-                    val statusColor = if (isUnpaid) ErrorRed else SuccessGreen
-                    
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text(
-                            text = "₹${String.format("%.2f", order.paymentAmount)}",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = BlueBtn
-                        )
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = statusColor.copy(alpha = 0.15f)
-                        ) {
-                            Text(
-                                text = paymentStatus,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = statusColor,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
-                    }
-                }
             }
 
             Spacer(Modifier.height(12.dp))
@@ -531,86 +506,6 @@ private fun OrderDetailsDialog(
                             value = order.shopId,
                             icon = Icons.Default.Store
                         )
-                        DetailRow(
-                            label = "Customer Phone",
-                            value = order.customerPhone.ifEmpty { "Not provided" },
-                            icon = Icons.Default.Receipt
-                        )
-                    }
-
-                    HorizontalDivider(color = BorderGray)
-
-                    // Payment Information
-                    DetailSection(title = "Payment Information") {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                Text(
-                                    text = "Payment Status",
-                                    fontSize = 13.sp,
-                                    color = TextSecondary
-                                )
-                                Spacer(Modifier.height(4.dp))
-                                Surface(
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = SuccessGreen.copy(alpha = 0.15f)
-                                ) {
-                                    Text(
-                                        text = viewModel.getPaymentStatusDisplay(order),
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = SuccessGreen,
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                                    )
-                                }
-                            }
-
-                            if (order.paymentAmount > 0) {
-                                Column(horizontalAlignment = Alignment.End) {
-                                    Text(
-                                        text = "Total Amount",
-                                        fontSize = 13.sp,
-                                        color = TextSecondary
-                                    )
-                                    Spacer(Modifier.height(4.dp))
-                                    Text(
-                                        text = "₹${String.format("%.2f", order.paymentAmount)}",
-                                        fontSize = 24.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = BlueBtn
-                                    )
-                                }
-                            }
-                        }
-
-                        if (order.razorpayPaymentId.isNotEmpty()) {
-                            Spacer(Modifier.height(12.dp))
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = BackgroundGray
-                            ) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(12.dp)
-                                ) {
-                                    Text(
-                                        text = "Payment ID",
-                                        fontSize = 11.sp,
-                                        color = TextSecondary
-                                    )
-                                    Text(
-                                        text = order.razorpayPaymentId,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = TextPrimary
-                                    )
-                                }
-                            }
-                        }
                     }
 
                     HorizontalDivider(color = BorderGray)
@@ -618,18 +513,6 @@ private fun OrderDetailsDialog(
                     // Documents Information
                     DetailSection(title = "Documents (${getDocumentCount(order)})") {
                         DocumentsList(order = order)
-                    }
-
-                    // Print Settings
-                    val printSettingsInfo = getDetailedPrintSettings(order)
-                    if (printSettingsInfo.isNotEmpty()) {
-                        HorizontalDivider(color = BorderGray)
-
-                        DetailSection(title = "Print Settings") {
-                            printSettingsInfo.forEach { (label, value) ->
-                                PrintSettingRow(label = label, value = value)
-                            }
-                        }
                     }
                 }
             }
@@ -774,7 +657,7 @@ private fun DocumentItemCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = getFileTypeDisplay(fileType),
+                        text = com.humblecoders.stationary.data.model.FileType.getDisplayNameFromFileTypeString(fileType),
                         fontSize = 12.sp,
                         color = TextSecondary
                     )
@@ -872,22 +755,6 @@ private fun getDocumentCount(order: PrintOrder): Int {
         } else {
             1
         }
-    }
-}
-
-private fun getFileTypeDisplay(extension: String): String {
-    return when (extension) {
-        ".pdf" -> "PDF"
-        ".docx" -> "Word"
-        ".doc" -> "Word (Legacy)"
-        ".pptx" -> "PowerPoint"
-        ".ppt" -> "PowerPoint (Legacy)"
-        ".xlsx" -> "Excel"
-        ".xls" -> "Excel (Legacy)"
-        ".txt" -> "Text"
-        ".rtf" -> "Rich Text"
-        ".jpg", ".jpeg", ".png", ".webp" -> "Image"
-        else -> "Document"
     }
 }
 

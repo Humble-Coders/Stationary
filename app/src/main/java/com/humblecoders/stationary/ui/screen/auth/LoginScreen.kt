@@ -46,7 +46,8 @@ private val SuccessGreen = Color(0xFF10B981)
 fun LoginScreen(
     viewModel: LoginViewModel,
     navController: NavController,
-    googleSignInLauncher: ActivityResultLauncher<Intent>
+    googleSignInLauncher: ActivityResultLauncher<Intent>,
+    onSetGoogleSignInSource: () -> Unit = {}
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -316,6 +317,7 @@ fun LoginScreen(
                 OutlinedButton(
                     onClick = {
                         try {
+                            onSetGoogleSignInSource()
                             val signInIntent = viewModel.startGoogleSignIn()
                             googleSignInLauncher.launch(signInIntent)
                         } catch (e: Exception) {

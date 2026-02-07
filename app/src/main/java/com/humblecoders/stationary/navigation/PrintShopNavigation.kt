@@ -23,6 +23,7 @@ import com.humblecoders.stationary.ui.screen.auth.LoginScreen
 import com.humblecoders.stationary.ui.screen.auth.RegisterScreen
 import com.humblecoders.stationary.ui.screen.auth.ProfileScreen
 import com.humblecoders.stationary.ui.viewmodel.*
+import com.humblecoders.stationary.GoogleSignInSource
 import com.humblecoders.stationary.ui.viewmodel.auth.LoginViewModel
 import com.humblecoders.stationary.ui.viewmodel.auth.RegisterViewModel
 import com.humblecoders.stationary.ui.viewmodel.auth.ProfileViewModel
@@ -54,6 +55,7 @@ fun PrintShopNavigation(
     profileViewModel: ProfileViewModel,
     activity: Activity,
     googleSignInLauncher: ActivityResultLauncher<Intent>,
+    onSetGoogleSignInSource: (GoogleSignInSource) -> Unit,
     sharedFilesData: SharedFilesData? = null,
     onSharedFilesHandled: () -> Unit = {}
 ) {
@@ -117,7 +119,8 @@ fun PrintShopNavigation(
             LoginScreen(
                 viewModel = loginViewModel,
                 navController = navController,
-                googleSignInLauncher = googleSignInLauncher
+                googleSignInLauncher = googleSignInLauncher,
+                onSetGoogleSignInSource = { onSetGoogleSignInSource(GoogleSignInSource.LOGIN) }
             )
         }
 
@@ -134,7 +137,8 @@ fun PrintShopNavigation(
             RegisterScreen(
                 viewModel = registerViewModel,
                 navController = navController,
-                googleSignInLauncher = googleSignInLauncher
+                googleSignInLauncher = googleSignInLauncher,
+                onSetGoogleSignInSource = { onSetGoogleSignInSource(GoogleSignInSource.REGISTER) }
             )
         }
 
@@ -189,9 +193,6 @@ fun PrintShopNavigation(
                 },
                 onNavigateToProfile = {
                     navController.navigate(Screen.Profile.route)
-                },
-                onNavigateToActiveOrders = {
-                    navController.navigate(Screen.ActiveOrders.route)
                 }
             )
         }

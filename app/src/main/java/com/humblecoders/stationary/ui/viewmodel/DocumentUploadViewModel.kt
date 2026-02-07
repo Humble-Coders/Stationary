@@ -23,11 +23,15 @@ import com.humblecoders.stationary.data.repository.PrintOrderRepository
 import com.humblecoders.stationary.data.repository.ShopSettingsRepository
 import com.humblecoders.stationary.util.FileUtils
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicInteger
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
@@ -75,7 +79,24 @@ class DocumentUploadViewModel(
         private fun getMaxDocuments(fileType: FileType?): Int {
             return if (fileType == FileType.IMAGE) MAX_IMAGES else MAX_DOCUMENTS
         }
-        
+
+        private fun countByType(documents: List<DocumentItem>): Pair<Int, Int> {
+            val images = documents.count { it.fileType == FileType.IMAGE }
+            val others = documents.size - images
+            return Pair(images, others)
+        }
+
+        /** Sort order for mixed types: PDFs first, then images, then other documents. */
+        private fun sortDocumentsByType(documents: List<DocumentItem>): List<DocumentItem> {
+            return documents.sortedBy {
+                when (it.fileType) {
+                    FileType.PDF -> 0
+                    FileType.IMAGE -> 1
+                    else -> 2
+                }
+            }
+        }
+
         fun clearPersistedData() {
             persistedDocuments = emptyList()
             persistedFileType = null
@@ -104,8 +125,9 @@ class DocumentUploadViewModel(
         // Restore persisted documents if any (survives Activity/ViewModel recreation)
         if (persistedDocuments.isNotEmpty()) {
             Log.d("DocumentUploadVM", "Restoring ${persistedDocuments.size} persisted documents")
+            val sorted = sortDocumentsByType(persistedDocuments)
             _uiState.value = _uiState.value.copy(
-                documents = persistedDocuments,
+                documents = sorted,
                 currentFileType = persistedFileType,
                 shopId = persistedShopId
             )
@@ -224,49 +246,47 @@ class DocumentUploadViewModel(
         }
 
         // Validate that each PDF document has at least one page selected in either B&W or Color
-        if (_uiState.value.currentFileType == FileType.PDF) {
-            val documentsWithoutPages = _uiState.value.documents.mapIndexedNotNull { index, doc ->
-                val bwPages = doc.printSettings.customBWPages.trim()
-                val colorPages = doc.printSettings.customColorPages.trim()
-                if (bwPages.isEmpty() && colorPages.isEmpty()) {
-                    Pair(index + 1, doc.fileName) // File number (1-based) and file name
-                } else {
-                    null
-                }
-            }
-
-            if (documentsWithoutPages.isNotEmpty()) {
-                _uiState.value = _uiState.value.copy(
-                    filesWithMissingSettings = documentsWithoutPages
-                )
-                return
-            }
+        val pdfDocumentsWithoutPages = _uiState.value.documents.mapIndexedNotNull { index, doc ->
+            if (doc.fileType != FileType.PDF) return@mapIndexedNotNull null
+            val bwPages = doc.printSettings.customBWPages.trim()
+            val colorPages = doc.printSettings.customColorPages.trim()
+            if (bwPages.isEmpty() && colorPages.isEmpty()) Pair(index + 1, doc.fileName) else null
+        }
+        if (pdfDocumentsWithoutPages.isNotEmpty()) {
+            _uiState.value = _uiState.value.copy(filesWithMissingSettings = pdfDocumentsWithoutPages)
+            return
         }
 
         viewModelScope.launch {
             try {
                 _uiState.value = _uiState.value.copy(isUploading = true, error = null)
-
-                // Upload documents to Firebase Storage
-                val uploadedDocuments = mutableListOf<DocumentItem>()
                 val documents = _uiState.value.documents
+                val total = documents.size
+                val completed = AtomicInteger(0)
 
-                for ((index, document) in documents.withIndex()) {
-                    _uiState.value = _uiState.value.copy(
-                        uploadProgress = (index.toFloat() / documents.size)
-                    )
-
-                    val uri = document.uri ?: run {
-                        Log.e("DocumentUploadVM", "Document URI is null for ${document.fileName}")
-                        throw Exception("Document URI is null - please re-select the file")
+                val uploadedDocuments = withContext(Dispatchers.IO) {
+                    coroutineScope {
+                        documents.mapIndexed { index, document ->
+                            async {
+                                val uri = document.uri ?: run {
+                                    Log.e("DocumentUploadVM", "Document URI is null for ${document.fileName}")
+                                    throw Exception("Document URI is null - please re-select the file")
+                                }
+                                val documentUrl = printOrderRepository.uploadDocument(
+                                    uri,
+                                    document.fileType,
+                                    document.fileName
+                                )
+                                completed.incrementAndGet()
+                                withContext(Dispatchers.Main) {
+                                    _uiState.value = _uiState.value.copy(
+                                        uploadProgress = completed.get().toFloat() / total
+                                    )
+                                }
+                                index to document.copy(uri = Uri.parse(documentUrl))
+                            }
+                        }.awaitAll().sortedBy { it.first }.map { it.second }
                     }
-
-                    val documentUrl = printOrderRepository.uploadDocument(
-                        uri, 
-                        document.fileType,
-                        document.fileName
-                    )
-                    uploadedDocuments.add(document.copy(uri = Uri.parse(documentUrl)))
                 }
 
                 // Create order via Cloud Function
@@ -313,135 +333,104 @@ class DocumentUploadViewModel(
 
         viewModelScope.launch {
             try {
-                Log.d("DocumentUploadVM", "=== selectFiles called ===")
+                Log.d("DocumentUploadVM", "=== selectFiles called (mixed types supported) ===")
                 Log.d("DocumentUploadVM", "Incoming URIs: ${uris.size}")
-                Log.d("DocumentUploadVM", "Current documents: ${_uiState.value.documents.size}")
-                
-                // Filter out URIs that are already in our documents list
-                val existingUris = _uiState.value.documents.mapNotNull { it.uri }.toSet()
+                val currentDocuments = _uiState.value.documents
+                Log.d("DocumentUploadVM", "Current documents: ${currentDocuments.size}")
+
+                val existingUris = currentDocuments.mapNotNull { it.uri }.toSet()
                 val newUris = uris.filter { it !in existingUris }
-                
-                Log.d("DocumentUploadVM", "After filtering duplicates: ${newUris.size} new URIs")
-                
+
                 if (newUris.isEmpty()) {
                     Log.d("DocumentUploadVM", "No new files to add (all duplicates)")
                     _uiState.value = _uiState.value.copy(isLoadingFiles = false)
                     return@launch
                 }
-                
-                _uiState.value = _uiState.value.copy(error = null, isLoadingFiles = true)
 
-                // Determine file type from first NEW file
-                val firstUri = newUris.first()
-                val detectedFileType = when {
-                    FileUtils.isPdfFile(context, firstUri) -> FileType.PDF
-                    FileUtils.isDocxFile(context, firstUri) -> FileType.DOCX
-                    FileUtils.isDocFile(context, firstUri) -> FileType.DOC
-                    FileUtils.isPptxFile(context, firstUri) -> FileType.PPTX
-                    FileUtils.isPptFile(context, firstUri) -> FileType.PPT
-                    FileUtils.isXlsxFile(context, firstUri) -> FileType.XLSX
-                    FileUtils.isXlsFile(context, firstUri) -> FileType.XLS
-                    FileUtils.isTxtFile(context, firstUri) -> FileType.TXT
-                    FileUtils.isRtfFile(context, firstUri) -> FileType.RTF
-                    FileUtils.isImageFile(context, firstUri) -> FileType.IMAGE
-                    else -> {
-                        _uiState.value = _uiState.value.copy(error = "Unsupported file format", isLoadingFiles = false)
-                        return@launch
-                    }
-                }
+                _uiState.value = _uiState.value.copy(error = null, fileTypeMismatchError = null, isLoadingFiles = true)
 
-                // Check if we already have documents and type consistency
-                val currentDocuments = _uiState.value.documents
-                if (currentDocuments.isNotEmpty() && _uiState.value.currentFileType != detectedFileType) {
-                    _uiState.value = _uiState.value.copy(
-                        fileTypeMismatchError = "You have ${_uiState.value.currentFileType?.displayName} files selected.\n\nPlease share only ${_uiState.value.currentFileType?.displayName} files or remove existing files first.",
-                        isLoadingFiles = false
-                    )
-                    return@launch
-                }
+                var (currentImageCount, currentDocCount) = countByType(currentDocuments)
 
-                // Check maximum document limit based on file type
-                val maxLimit = getMaxDocuments(detectedFileType)
-                if (currentDocuments.size + newUris.size > maxLimit) {
-                    _uiState.value = _uiState.value.copy(
-                        error = "Maximum $maxLimit ${if (detectedFileType == FileType.IMAGE) "images" else "documents"} allowed. You can add ${maxLimit - currentDocuments.size} more.",
-                        isLoadingFiles = false
-                    )
-                    return@launch
-                }
-
-                val invalidFiles = newUris.filter { uri ->
-                    when (detectedFileType) {
-                        FileType.PDF -> !FileUtils.isPdfFile(context, uri)
-                        FileType.DOCX -> !FileUtils.isDocxFile(context, uri)
-                        FileType.DOC -> !FileUtils.isDocFile(context, uri)
-                        FileType.PPTX -> !FileUtils.isPptxFile(context, uri)
-                        FileType.PPT -> !FileUtils.isPptFile(context, uri)
-                        FileType.XLSX -> !FileUtils.isXlsxFile(context, uri)
-                        FileType.XLS -> !FileUtils.isXlsFile(context, uri)
-                        FileType.TXT -> !FileUtils.isTxtFile(context, uri)
-                        FileType.RTF -> !FileUtils.isRtfFile(context, uri)
-                        FileType.IMAGE -> !FileUtils.isImageFile(context, uri)
-                    }
-                }
-
-                if (invalidFiles.isNotEmpty()) {
-                    _uiState.value = _uiState.value.copy(
-                        error = "All files must be ${detectedFileType.displayName} files",
-                        isLoadingFiles = false
-                    )
-                    return@launch
-                }
-
-                // Process each NEW file - copy content:// URIs to cache for permanent access
                 val newDocuments = mutableListOf<DocumentItem>()
+                val skippedUnsupported = mutableListOf<String>()
+                val skippedLimit = mutableListOf<String>()
 
                 for (uri in newUris) {
-                    // Copy content:// URIs to cache to prevent permission expiration
                     val safeUri = if (uri.scheme == "content") {
-                        Log.d("DocumentUploadVM", "Copying content:// URI to cache: $uri")
-                        val cachedUri = copyToCache(context, uri)
-                        if (cachedUri != null) {
-                            Log.d("DocumentUploadVM", "Cached successfully: $cachedUri")
-                            cachedUri
-                        } else {
-                            Log.w("DocumentUploadVM", "Failed to cache, using original URI")
-                            uri
-                        }
+                        copyToCache(context, uri) ?: uri
                     } else {
-                        // Already a file:// URI (from sharing), use as-is
-                        Log.d("DocumentUploadVM", "Using file:// URI directly: $uri")
                         uri
                     }
 
-                    if (!FileUtils.isValidFile(context, safeUri)) {
-                        _uiState.value = _uiState.value.copy(
-                            error = "Invalid file: ${FileUtils.getFileName(context, safeUri)}",
-                            isLoadingFiles = false
-                        )
-                        return@launch
+                    val (fileType, nameToUse) = FileUtils.detectFileTypeAndFileName(context, safeUri)
+                    if (fileType == null) {
+                        skippedUnsupported.add(FileUtils.getFileName(context, safeUri))
+                        continue
+                    }
+                    val fileSize = FileUtils.getFileSize(context, safeUri)
+                    if (fileSize <= 0 || fileSize >= 50 * 1024 * 1024) {
+                        skippedUnsupported.add(nameToUse)
+                        continue
                     }
 
-                    val documentItem = processFile(context, safeUri, detectedFileType)
+                    if (fileType == FileType.IMAGE) {
+                        if (currentImageCount >= MAX_IMAGES) {
+                            skippedLimit.add(nameToUse + " (max $MAX_IMAGES images)")
+                            continue
+                        }
+                        currentImageCount++
+                    } else {
+                        if (currentDocCount >= MAX_DOCUMENTS) {
+                            skippedLimit.add(nameToUse + " (max $MAX_DOCUMENTS documents)")
+                            continue
+                        }
+                        currentDocCount++
+                    }
+
+                    val documentItem = processFile(context, safeUri, fileType, nameToUse)
                     if (documentItem != null) {
                         newDocuments.add(documentItem)
                     }
                 }
 
-                // Update state with new documents ADDED to existing
-                val updatedDocuments = currentDocuments + newDocuments
-                Log.d("DocumentUploadVM", "Updated documents count: ${updatedDocuments.size} (was ${currentDocuments.size}, added ${newDocuments.size})")
-                
+                if (newDocuments.isEmpty() && (skippedUnsupported.isNotEmpty() || skippedLimit.isNotEmpty())) {
+                    val reasons = buildList {
+                        if (skippedUnsupported.isNotEmpty()) add("Unsupported or invalid: ${skippedUnsupported.take(3).joinToString()}")
+                        if (skippedLimit.isNotEmpty()) add("Limit reached: ${skippedLimit.take(2).joinToString()}")
+                    }
+                    _uiState.value = _uiState.value.copy(
+                        error = reasons.joinToString(". "),
+                        isLoadingFiles = false
+                    )
+                    return@launch
+                }
+
+                if (skippedUnsupported.isNotEmpty() || skippedLimit.isNotEmpty()) {
+                    val msg = buildList {
+                        if (skippedUnsupported.isNotEmpty()) add("Skipped ${skippedUnsupported.size} unsupported file(s)")
+                        if (skippedLimit.isNotEmpty()) add("Skipped ${skippedLimit.size} file(s) (limit reached)")
+                    }.joinToString(". ")
+                    Log.d("DocumentUploadVM", msg)
+                    _uiState.value = _uiState.value.copy(error = msg)
+                }
+
+                val updatedDocuments = sortDocumentsByType(currentDocuments + newDocuments)
+                val types = updatedDocuments.map { it.fileType }.toSet()
+                val currentFileType = if (types.size == 1) types.single() else null
+                val (imgCount, docCount) = countByType(updatedDocuments)
+                val canAddMore = imgCount < MAX_IMAGES || docCount < MAX_DOCUMENTS
+
+                Log.d("DocumentUploadVM", "Updated: ${updatedDocuments.size} total (${imgCount} images, $docCount docs), mixed=${types.size > 1}")
+
                 _uiState.value = _uiState.value.copy(
-                    currentFileType = detectedFileType,
+                    currentFileType = currentFileType,
                     documents = updatedDocuments,
-                    canAddMoreFiles = updatedDocuments.size < maxLimit,
+                    canAddMoreFiles = canAddMore,
                     isLoadingFiles = false
                 )
-                
-                // Persist documents to survive ViewModel recreation
+
                 persistedDocuments = updatedDocuments
-                persistedFileType = detectedFileType
+                persistedFileType = currentFileType
                 persistedShopId = _uiState.value.shopId
 
                 recalculateTotalPrice()
@@ -453,10 +442,10 @@ class DocumentUploadViewModel(
         }
     }
 
-    private suspend fun processFile(context: Context, uri: Uri, fileType: FileType): DocumentItem? {
+    private suspend fun processFile(context: Context, uri: Uri, fileType: FileType, displayNameOverride: String? = null): DocumentItem? {
         return withContext(Dispatchers.IO) {
             try {
-                val fileName = FileUtils.getFileName(context, uri)
+                val fileName = displayNameOverride ?: FileUtils.getFileName(context, uri)
                 val fileSize = FileUtils.getFileSize(context, uri)
                 val documentId = UUID.randomUUID().toString()
 
@@ -647,16 +636,20 @@ class DocumentUploadViewModel(
     }
 
     fun removeDocument(documentId: String) {
-        val updatedDocuments = _uiState.value.documents.filter { it.id != documentId }
+        val updatedDocuments = sortDocumentsByType(_uiState.value.documents.filter { it.id != documentId })
+        val types = updatedDocuments.map { it.fileType }.toSet()
+        val currentFileType = if (types.size == 1) types.single() else null
+        val (imgCount, docCount) = countByType(updatedDocuments)
+        val canAddMore = imgCount < MAX_IMAGES || docCount < MAX_DOCUMENTS
 
         _uiState.value = _uiState.value.copy(
             documents = updatedDocuments,
-            currentFileType = if (updatedDocuments.isEmpty()) null else _uiState.value.currentFileType,
-            canAddMoreFiles = updatedDocuments.size < MAX_DOCUMENTS
+            currentFileType = currentFileType,
+            canAddMoreFiles = canAddMore
         )
-        
-        // Update persisted data
+
         persistedDocuments = updatedDocuments
+        persistedFileType = currentFileType
         if (updatedDocuments.isEmpty()) {
             persistedFileType = null
         }
@@ -782,23 +775,15 @@ class DocumentUploadViewModel(
         }
 
         // Validate that each PDF document has at least one page selected in either B&W or Color
-        if (_uiState.value.currentFileType == FileType.PDF) {
-            val documentsWithoutPages = _uiState.value.documents.mapIndexedNotNull { index, doc ->
-                val bwPages = doc.printSettings.customBWPages.trim()
-                val colorPages = doc.printSettings.customColorPages.trim()
-                if (bwPages.isEmpty() && colorPages.isEmpty()) {
-                    Pair(index + 1, doc.fileName) // File number (1-based) and file name
-                } else {
-                    null
-                }
-            }
-
-            if (documentsWithoutPages.isNotEmpty()) {
-                _uiState.value = _uiState.value.copy(
-                    filesWithMissingSettings = documentsWithoutPages
-                )
-                return
-            }
+        val pdfDocsWithoutPages = _uiState.value.documents.mapIndexedNotNull { index, doc ->
+            if (doc.fileType != FileType.PDF) return@mapIndexedNotNull null
+            val bwPages = doc.printSettings.customBWPages.trim()
+            val colorPages = doc.printSettings.customColorPages.trim()
+            if (bwPages.isEmpty() && colorPages.isEmpty()) Pair(index + 1, doc.fileName) else null
+        }
+        if (pdfDocsWithoutPages.isNotEmpty()) {
+            _uiState.value = _uiState.value.copy(filesWithMissingSettings = pdfDocsWithoutPages)
+            return
         }
 
         // Validate page ranges for PDF documents
@@ -846,47 +831,49 @@ class DocumentUploadViewModel(
         viewModelScope.launch {
             try {
                 _uiState.value = _uiState.value.copy(isUploading = true, error = null)
-
-                // Upload all documents
-                val individualDocumentsArray = mutableListOf<Map<String, Any>>()
                 val documents = _uiState.value.documents
+                val total = documents.size
+                val completed = AtomicInteger(0)
 
-                for ((index, document) in documents.withIndex()) {
-                    _uiState.value = _uiState.value.copy(
-                        uploadProgress = (index.toFloat() / documents.size)
-                    )
-
-                    val uri = document.uri ?: run {
-                        Log.e("DocumentUploadVM", "Document URI is null for ${document.fileName}")
-                        throw Exception("Document URI is null - please re-select the file")
+                withContext(Dispatchers.IO) {
+                    coroutineScope {
+                        documents.map { document ->
+                            async {
+                                val uri = document.uri ?: run {
+                                    Log.e("DocumentUploadVM", "Document URI is null for ${document.fileName}")
+                                    throw Exception("Document URI is null - please re-select the file")
+                                }
+                                printOrderRepository.uploadDocument(uri, document.fileType, document.fileName)
+                                completed.incrementAndGet()
+                                withContext(Dispatchers.Main) {
+                                    _uiState.value = _uiState.value.copy(
+                                        uploadProgress = completed.get().toFloat() / total
+                                    )
+                                }
+                            }
+                        }.awaitAll()
                     }
+                }
 
-                    // Upload document (URL stored in individualDocuments if needed later)
-                    printOrderRepository.uploadDocument(uri, document.fileType, document.fileName)
-
-                    // Simplified printSettings - only customBWPages, customColorPages, and copies
-                    val printSettingsMap = mapOf(
-                        "customBWPages" to document.printSettings.customBWPages,
-                        "customColorPages" to document.printSettings.customColorPages,
-                        "copies" to document.printSettings.copies
-                    )
-
-                    // Individual document data - only fileName, fileType, and printSettings
-                    val docData = mapOf(
+                val individualDocumentsArray = documents.map { document ->
+                    mapOf(
                         "fileName" to document.fileName,
-                        "fileType" to document.fileType.extension,
-                        "printSettings" to printSettingsMap
+                        "fileType" to document.fileType.mimeType,
+                        "printSettings" to mapOf(
+                            "customBWPages" to document.printSettings.customBWPages,
+                            "customColorPages" to document.printSettings.customColorPages,
+                            "copies" to document.printSettings.copies
+                        )
                     )
-                    individualDocumentsArray.add(docData)
                 }
 
                 val order = PrintOrder(
                     customerId = _uiState.value.customerId,
                     customerPhone = _uiState.value.customerPhone,
                     shopId = _uiState.value.shopId,
-                    fileType = _uiState.value.currentFileType?.extension ?: ".pdf",
-                    individualDocuments = individualDocumentsArray, // Array of document maps
-                    documentCount = documents.size, // Document count
+                    fileType = _uiState.value.currentFileType?.mimeType ?: documents.firstOrNull()?.fileType?.mimeType ?: "application/pdf",
+                    individualDocuments = individualDocumentsArray,
+                    documentCount = documents.size,
                     paymentStatus = PaymentStatus.UNPAID
                 )
 
@@ -986,54 +973,36 @@ class DocumentUploadViewModel(
         // For non-PDF files, skip payment validation and directly upload
         viewModelScope.launch {
             try {
-                Log.d("DocumentUploadVM", "=== submitOrderDirectly: Starting upload ===")
-                Log.d("DocumentUploadVM", "File type: ${_uiState.value.currentFileType}")
+                Log.d("DocumentUploadVM", "=== submitOrderDirectly: Starting parallel upload ===")
                 Log.d("DocumentUploadVM", "Document count: ${_uiState.value.documents.size}")
-                
+
                 _uiState.value = _uiState.value.copy(isUploading = true, error = null)
-
-                // Upload documents to Firebase Storage
-                val uploadedDocuments = mutableListOf<DocumentItem>()
                 val documents = _uiState.value.documents
+                val total = documents.size
+                val completed = AtomicInteger(0)
 
-                for ((index, document) in documents.withIndex()) {
-                    Log.d("DocumentUploadVM", "Processing document ${index + 1}/${documents.size}")
-                    Log.d("DocumentUploadVM", "Document name: ${document.fileName}")
-                    Log.d("DocumentUploadVM", "Document type: ${document.fileType}")
-                    Log.d("DocumentUploadVM", "Document URI: ${document.uri}")
-                    
-                    _uiState.value = _uiState.value.copy(
-                        uploadProgress = (index.toFloat() / documents.size)
-                    )
-
-                    // Upload document to Firebase Storage
-                    Log.d("DocumentUploadVM", "Calling uploadDocument for: ${document.fileName}")
-                    Log.d("DocumentUploadVM", "URI details - Scheme: ${document.uri?.scheme}, Path: ${document.uri?.path}")
-                    
-                    val uri = document.uri ?: run {
-                        Log.e("DocumentUploadVM", "❌ Document URI is null!")
-                        throw Exception("Document URI is null - please re-select the file")
-                    }
-                    
-                    try {
-                        val documentUrl = printOrderRepository.uploadDocument(
-                            uri, 
-                            document.fileType,
-                            document.fileName
-                        )
-                        Log.d("DocumentUploadVM", "✅ Upload successful for ${document.fileName}, URL: $documentUrl")
-                        // Store the uploaded document with the URL
-                        uploadedDocuments.add(document.copy(uri = Uri.parse(documentUrl)))
-                    } catch (e: Exception) {
-                        Log.e("DocumentUploadVM", "❌ Upload failed for ${document.fileName}", e)
-                        Log.e("DocumentUploadVM", "Error class: ${e.javaClass.name}")
-                        Log.e("DocumentUploadVM", "Error message: ${e.message}")
-                        Log.e("DocumentUploadVM", "Error cause: ${e.cause?.message}")
-                        if (e.message?.contains("Permission", ignoreCase = true) == true) {
-                            Log.e("DocumentUploadVM", "⚠️ PERMISSION ERROR DETECTED!")
-                            Log.e("DocumentUploadVM", "This might be a Firebase Storage rules issue or Android file access issue")
-                        }
-                        throw e
+                val uploadedDocuments = withContext(Dispatchers.IO) {
+                    coroutineScope {
+                        documents.mapIndexed { index, document ->
+                            async {
+                                val uri = document.uri ?: run {
+                                    Log.e("DocumentUploadVM", "Document URI is null for ${document.fileName}")
+                                    throw Exception("Document URI is null - please re-select the file")
+                                }
+                                val documentUrl = printOrderRepository.uploadDocument(
+                                    uri,
+                                    document.fileType,
+                                    document.fileName
+                                )
+                                completed.incrementAndGet()
+                                withContext(Dispatchers.Main) {
+                                    _uiState.value = _uiState.value.copy(
+                                        uploadProgress = completed.get().toFloat() / total
+                                    )
+                                }
+                                index to document.copy(uri = Uri.parse(documentUrl))
+                            }
+                        }.awaitAll().sortedBy { it.first }.map { it.second }
                     }
                 }
 
@@ -1114,17 +1083,20 @@ private fun isValidPageRangeForDocument(pageRange: String, maxPages: Int): Boole
     if (pageRange.isEmpty()) return true
 
     try {
-        val parts = pageRange.split(",")
+        val parts = pageRange.split(",").map { it.trim() }
+        if (parts.any { it.isEmpty() }) return false
         for (part in parts) {
-            val trimmed = part.trim()
-            if (trimmed.contains("-")) {
-                val range = trimmed.split("-")
+            if (part.contains("-")) {
+                val range = part.split("-")
                 if (range.size != 2) return false
-                val start = range[0].trim().toInt()
-                val end = range[1].trim().toInt()
+                val startStr = range[0].trim()
+                val endStr = range[1].trim()
+                if (startStr.isEmpty() || endStr.isEmpty()) return false
+                val start = startStr.toInt()
+                val end = endStr.toInt()
                 if (start <= 0 || end <= 0 || start > end || start > maxPages || end > maxPages) return false
             } else {
-                val page = trimmed.toInt()
+                val page = part.toInt()
                 if (page <= 0 || page > maxPages) return false
             }
         }
@@ -1155,12 +1127,11 @@ private fun parsePageRangeToListForDocument(pageRange: String): List<Int> {
     if (pageRange.isEmpty()) return emptyList()
 
     val pages = mutableSetOf<Int>()
-    val parts = pageRange.split(",")
+    val parts = pageRange.split(",").map { it.trim() }.filter { it.isNotEmpty() }
 
     for (part in parts) {
-        val trimmed = part.trim()
-        if (trimmed.contains("-")) {
-            val range = trimmed.split("-")
+        if (part.contains("-")) {
+            val range = part.split("-")
             if (range.size == 2) {
                 try {
                     val start = range[0].trim().toInt()
@@ -1174,7 +1145,7 @@ private fun parsePageRangeToListForDocument(pageRange: String): List<Int> {
             }
         } else {
             try {
-                pages.add(trimmed.toInt())
+                pages.add(part.toInt())
             } catch (e: Exception) {
                 // Skip invalid page number
             }

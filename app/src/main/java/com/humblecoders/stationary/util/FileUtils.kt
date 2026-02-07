@@ -3,6 +3,7 @@ package com.humblecoders.stationary.util
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import com.humblecoders.stationary.data.model.FileType
 
 object FileUtils {
 
@@ -88,6 +89,111 @@ object FileUtils {
         }
     }
 
+    /**
+     * Get MIME type from content provider (when available).
+     * May return null or empty string for unknown/generic types.
+     */
+    fun getMimeType(context: Context, uri: Uri): String? {
+        return try {
+            context.contentResolver.getType(uri)?.takeIf { it != "*/*" }
+        } catch (e: Exception) {
+            android.util.Log.w("FileUtils", "Could not get MIME type: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Map MIME type string to FileType. Returns null if not a supported type.
+     */
+    fun getFileTypeFromMimeType(mimeType: String?): FileType? {
+        if (mimeType.isNullOrBlank()) return null
+        val mime = mimeType.lowercase().trim()
+        return when {
+            mime == "application/pdf" -> FileType.PDF
+            mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" -> FileType.DOCX
+            mime == "application/msword" -> FileType.DOC
+            mime == "application/vnd.openxmlformats-officedocument.presentationml.presentation" -> FileType.PPTX
+            mime == "application/vnd.ms-powerpoint" -> FileType.PPT
+            mime == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" -> FileType.XLSX
+            mime == "application/vnd.ms-excel" -> FileType.XLS
+            mime == "text/plain" -> FileType.TXT
+            mime == "application/rtf" || mime == "text/rtf" -> FileType.RTF
+            mime.startsWith("image/") -> FileType.IMAGE
+            else -> null
+        }
+    }
+
+    /**
+     * Detect file type from file content (magic bytes) when extension and MIME are unavailable.
+     * Used for shared files that end up as file:// URIs without extension.
+     */
+    fun detectFileTypeFromMagicBytes(context: Context, uri: Uri): FileType? {
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                val header = ByteArray(12)
+                val read = inputStream.read(header)
+                if (read < 4) return null
+                when {
+                    // PDF: %PDF
+                    read >= 4 && header[0] == 0x25.toByte() && header[1] == 0x50.toByte() &&
+                        header[2] == 0x44.toByte() && header[3] == 0x46.toByte() -> FileType.PDF
+                    // JPEG: FF D8 FF
+                    read >= 3 && header[0] == 0xFF.toByte() && header[1] == 0xD8.toByte() && header[2] == 0xFF.toByte() -> FileType.IMAGE
+                    // PNG: 89 50 4E 47 0D 0A 1A 0A
+                    read >= 8 && header[0] == 0x89.toByte() && header[1] == 0x50.toByte() &&
+                        header[2] == 0x4E.toByte() && header[3] == 0x47.toByte() -> FileType.IMAGE
+                    // GIF: GIF87a or GIF89a
+                    read >= 6 && header[0] == 0x47.toByte() && header[1] == 0x49.toByte() &&
+                        header[2] == 0x46.toByte() && (header[3] == 0x38.toByte() || header[3] == 0x39.toByte()) -> FileType.IMAGE
+                    else -> null
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("FileUtils", "Magic byte detection failed: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Detect file type from URI: use filename extension if present, then MIME type, then magic bytes.
+     * When filename has no extension and type is detected from MIME or magic bytes, the returned name has the extension appended.
+     * @return Pair(detected FileType or null, filename to use for display/storage)
+     */
+    fun detectFileTypeAndFileName(context: Context, uri: Uri): Pair<FileType?, String> {
+        val rawName = getFileName(context, uri)
+        val ext = getFileExtension(rawName)
+
+        if (ext.isNotEmpty()) {
+            // Has extension: use existing extension-based detection
+            val type = when {
+                isPdfFile(context, uri) -> FileType.PDF
+                isDocxFile(context, uri) -> FileType.DOCX
+                isDocFile(context, uri) -> FileType.DOC
+                isPptxFile(context, uri) -> FileType.PPTX
+                isPptFile(context, uri) -> FileType.PPT
+                isXlsxFile(context, uri) -> FileType.XLSX
+                isXlsFile(context, uri) -> FileType.XLS
+                isTxtFile(context, uri) -> FileType.TXT
+                isRtfFile(context, uri) -> FileType.RTF
+                isImageFile(context, uri) -> FileType.IMAGE
+                else -> null
+            }
+            return Pair(type, rawName)
+        }
+
+        // No extension: try MIME type
+        var type = getFileTypeFromMimeType(getMimeType(context, uri))
+        if (type == null) {
+            type = detectFileTypeFromMagicBytes(context, uri)
+        }
+        return if (type != null) {
+            val suffix = if (type == FileType.IMAGE) ".jpg" else type.extension
+            Pair(type, rawName + suffix)
+        } else {
+            Pair(null, rawName)
+        }
+    }
+
     fun isPptxFile(context: Context, uri: Uri): Boolean {
         val fileName = getFileName(context, uri)
         return fileName.endsWith(".pptx", ignoreCase = true)
@@ -134,23 +240,9 @@ object FileUtils {
     }
 
     fun isValidFile(context: Context, uri: Uri): Boolean {
-        val fileName = getFileName(context, uri)
+        val (type, _) = detectFileTypeAndFileName(context, uri)
         val fileSize = getFileSize(context, uri)
-
-        val isValidFormat = isPdfFile(context, uri) ||
-                isDocxFile(context, uri) ||
-                isDocFile(context, uri) ||
-                isPptxFile(context, uri) ||
-                isPptFile(context, uri) ||
-                isXlsxFile(context, uri) ||
-                isXlsFile(context, uri) ||
-                isTxtFile(context, uri) ||
-                isRtfFile(context, uri) ||
-                isImageFile(context, uri)
-
-        return isValidFormat &&
-                fileSize > 0 &&
-                fileSize < 50 * 1024 * 1024 // 50MB limit
+        return type != null && fileSize > 0 && fileSize < 50 * 1024 * 1024 // 50MB limit
     }
 
     fun isDocxFile(context: Context, uri: Uri): Boolean {

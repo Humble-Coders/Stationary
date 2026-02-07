@@ -674,7 +674,7 @@ private fun DocumentItemCard(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = getFileTypeDisplay(fileType),
+                            text = com.humblecoders.stationary.data.model.FileType.getDisplayNameFromFileTypeString(fileType),
                             fontSize = 12.sp,
                             color = TextSecondary
                         )
@@ -762,22 +762,6 @@ private fun PrintSettingRow(
             fontWeight = FontWeight.Medium,
             color = TextPrimary
         )
-    }
-}
-
-private fun getFileTypeDisplay(extension: String): String {
-    return when (extension) {
-        ".pdf" -> "PDF"
-        ".docx" -> "Word"
-        ".doc" -> "Word (Legacy)"
-        ".pptx" -> "PowerPoint"
-        ".ppt" -> "PowerPoint (Legacy)"
-        ".xlsx" -> "Excel"
-        ".xls" -> "Excel (Legacy)"
-        ".txt" -> "Text"
-        ".rtf" -> "Rich Text"
-        ".jpg", ".jpeg", ".png", ".webp" -> "Image"
-        else -> "Document"
     }
 }
 

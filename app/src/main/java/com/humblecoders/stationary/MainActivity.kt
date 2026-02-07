@@ -46,6 +46,11 @@ import com.razorpay.PaymentData
 import com.razorpay.PaymentResultWithDataListener
 import org.json.JSONObject
 
+// Tracks which screen initiated the Google sign-in flow
+enum class GoogleSignInSource {
+    LOGIN, REGISTER
+}
+
 // Data class to hold shared files information
 data class SharedFilesData(
     val uris: List<Uri>,
@@ -77,6 +82,14 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
 
     lateinit var razorpayService: RazorpayService
         private set
+
+    // Tracks which screen (login or register) started the Google sign-in
+    var googleSignInSource: GoogleSignInSource = GoogleSignInSource.LOGIN
+        private set
+
+    fun setGoogleSignInSource(source: GoogleSignInSource) {
+        googleSignInSource = source
+    }
 
     // Holds shared files from external apps
     private var sharedFilesData = mutableStateOf<SharedFilesData?>(null)
@@ -395,27 +408,46 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
         googleSignInLauncher = registerForActivityResult(
             ActivityResultContracts.StartActivityForResult()
         ) { result ->
-            Log.d("MainActivity", "Google Sign-In result: ${result.resultCode}")
+            Log.d("MainActivity", "Google Sign-In result: ${result.resultCode}, source: $googleSignInSource")
 
             when (result.resultCode) {
                 RESULT_OK -> {
-                    Log.d("MainActivity", "Google Sign-In OK, processing result")
-                    loginViewModel.handleGoogleSignInResult(result.data)
-                    registerViewModel.handleGoogleSignInResult(result.data)
+                    Log.d("MainActivity", "Google Sign-In OK, processing result for $googleSignInSource")
+                    // Only route to the ViewModel that initiated the sign-in
+                    when (googleSignInSource) {
+                        GoogleSignInSource.LOGIN -> {
+                            loginViewModel.handleGoogleSignInResult(result.data)
+                        }
+                        GoogleSignInSource.REGISTER -> {
+                            registerViewModel.handleGoogleSignInResult(result.data)
+                        }
+                    }
                 }
                 RESULT_CANCELED -> {
                     Log.d("MainActivity", "Google Sign-In cancelled by user")
-                    loginViewModel.cancelGoogleSignIn()
-                    registerViewModel.cancelGoogleSignIn()
-                    loginViewModel.clearGoogleSignInState()
-                    registerViewModel.clearGoogleSignInState()
+                    when (googleSignInSource) {
+                        GoogleSignInSource.LOGIN -> {
+                            loginViewModel.cancelGoogleSignIn()
+                            loginViewModel.clearGoogleSignInState()
+                        }
+                        GoogleSignInSource.REGISTER -> {
+                            registerViewModel.cancelGoogleSignIn()
+                            registerViewModel.clearGoogleSignInState()
+                        }
+                    }
                 }
                 else -> {
                     Log.d("MainActivity", "Google Sign-In failed with code: ${result.resultCode}")
-                    loginViewModel.cancelGoogleSignIn()
-                    registerViewModel.cancelGoogleSignIn()
-                    loginViewModel.clearGoogleSignInState()
-                    registerViewModel.clearGoogleSignInState()
+                    when (googleSignInSource) {
+                        GoogleSignInSource.LOGIN -> {
+                            loginViewModel.cancelGoogleSignIn()
+                            loginViewModel.clearGoogleSignInState()
+                        }
+                        GoogleSignInSource.REGISTER -> {
+                            registerViewModel.cancelGoogleSignIn()
+                            registerViewModel.clearGoogleSignInState()
+                        }
+                    }
                 }
             }
         }
@@ -507,6 +539,7 @@ class MainActivity : ComponentActivity(), PaymentResultWithDataListener {
             profileViewModel = profileViewModel,
             activity = this@MainActivity,
             googleSignInLauncher = googleSignInLauncher,
+            onSetGoogleSignInSource = { source -> setGoogleSignInSource(source) },
             sharedFilesData = sharedFiles,
             onSharedFilesHandled = { clearSharedFiles() }
         )

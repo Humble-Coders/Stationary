@@ -192,17 +192,17 @@ sealed class PaymentResult {
     ) : PaymentResult()
 }
 
-enum class FileType(val displayName: String, val extension: String) {
-    PDF("PDF Document", ".pdf"),
-    DOCX("Word Document", ".docx"),
-    DOC("Word Document (Legacy)", ".doc"),
-    PPTX("PowerPoint Presentation", ".pptx"),
-    PPT("PowerPoint Presentation (Legacy)", ".ppt"),
-    XLSX("Excel Spreadsheet", ".xlsx"),
-    XLS("Excel Spreadsheet (Legacy)", ".xls"),
-    TXT("Text Document", ".txt"),
-    RTF("Rich Text Format", ".rtf"),
-    IMAGE("Image", ""); // Extension will be extracted from filename for images
+enum class FileType(val displayName: String, val extension: String, val mimeType: String) {
+    PDF("PDF Document", ".pdf", "application/pdf"),
+    DOCX("Word Document", ".docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+    DOC("Word Document (Legacy)", ".doc", "application/msword"),
+    PPTX("PowerPoint Presentation", ".pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
+    PPT("PowerPoint Presentation (Legacy)", ".ppt", "application/vnd.ms-powerpoint"),
+    XLSX("Excel Spreadsheet", ".xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+    XLS("Excel Spreadsheet (Legacy)", ".xls", "application/vnd.ms-excel"),
+    TXT("Text Document", ".txt", "text/plain"),
+    RTF("Rich Text Format", ".rtf", "application/rtf"),
+    IMAGE("Image", "", "image/jpeg");
 
     companion object {
         /**
@@ -215,6 +215,43 @@ enum class FileType(val displayName: String, val extension: String) {
                 fileName.substring(lastDot).lowercase()
             } else {
                 ".jpg" // Default fallback
+            }
+        }
+
+        /**
+         * Get display name from fileType string stored in Firestore.
+         * Handles both MIME type (from website / app) and extension (legacy from app).
+         */
+        fun getDisplayNameFromFileTypeString(fileType: String?): String {
+            if (fileType.isNullOrBlank()) return "Document"
+            val s = fileType.trim()
+            return when {
+                s.contains("/") -> when {
+                    s == "application/pdf" -> "PDF"
+                    s.startsWith("image/") -> "Image"
+                    s == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" -> "Word"
+                    s == "application/msword" -> "Word (Legacy)"
+                    s == "application/vnd.openxmlformats-officedocument.presentationml.presentation" -> "PowerPoint"
+                    s == "application/vnd.ms-powerpoint" -> "PowerPoint (Legacy)"
+                    s == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" -> "Excel"
+                    s == "application/vnd.ms-excel" -> "Excel (Legacy)"
+                    s == "text/plain" -> "Text"
+                    s == "application/rtf" || s == "text/rtf" -> "Rich Text"
+                    else -> "Document"
+                }
+                else -> when (s) {
+                    ".pdf" -> "PDF"
+                    ".docx" -> "Word"
+                    ".doc" -> "Word (Legacy)"
+                    ".pptx" -> "PowerPoint"
+                    ".ppt" -> "PowerPoint (Legacy)"
+                    ".xlsx" -> "Excel"
+                    ".xls" -> "Excel (Legacy)"
+                    ".txt" -> "Text"
+                    ".rtf" -> "Rich Text"
+                    ".jpg", ".jpeg", ".png", ".webp" -> "Image"
+                    else -> "Document"
+                }
             }
         }
     }

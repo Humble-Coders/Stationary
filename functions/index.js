@@ -198,9 +198,16 @@ function calculateOrderPrice(documents, shopSettings) {
 }
 
 
-exports.createWebsitePrintOrder = onCall(async (request) => {
+exports.createWebsitePrintOrder = onCall({
+  enforceAppCheck: true,
+}, async (request) => {
   try {
     console.log("=== WEBSITE CREATE PRINT ORDER ===");
+
+    // Verify App Check token is present
+    if (request.app == undefined) {
+      throw new Error("App Check verification failed");
+    }
 
     if (!request.auth) {
       throw new Error("Unauthenticated website request");
@@ -855,9 +862,16 @@ exports.checkOrderStatus = onCall(async (request) => {
 // CLOUD FUNCTION 5: MARK ORDER AS SUBMITTED (Website upload complete)
 // ============================================
 
-exports.markOrderAsSubmitted = onCall(async (request) => {
+exports.markOrderAsSubmitted = onCall({
+  enforceAppCheck: true,
+}, async (request) => {
   try {
     console.log("=== MARK ORDER AS SUBMITTED ===");
+
+    // Verify App Check token is present
+    if (request.app == undefined) {
+      throw new Error("App Check verification failed");
+    }
 
     // Authentication check
     if (!request.auth) {

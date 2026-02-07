@@ -46,7 +46,8 @@ private val ErrorRed = Color(0xFFEF4444)
 fun RegisterScreen(
     viewModel: RegisterViewModel,
     navController: NavController,
-    googleSignInLauncher: ActivityResultLauncher<Intent>
+    googleSignInLauncher: ActivityResultLauncher<Intent>,
+    onSetGoogleSignInSource: () -> Unit = {}
 ) {
     var fullName by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
@@ -355,6 +356,7 @@ fun RegisterScreen(
                 OutlinedButton(
                     onClick = {
                         try {
+                            onSetGoogleSignInSource()
                             val signInIntent = viewModel.startGoogleSignIn()
                             googleSignInLauncher.launch(signInIntent)
                         } catch (e: Exception) {

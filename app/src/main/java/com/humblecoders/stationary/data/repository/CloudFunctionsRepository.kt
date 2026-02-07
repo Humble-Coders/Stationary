@@ -58,7 +58,7 @@ class CloudFunctionsRepository {
                 // Individual document data - fileName, fileType, fileUrl, and printSettings
                 val docMap = hashMapOf<String, Any>(
                     "fileName" to doc.fileName,
-                    "fileType" to doc.fileType.extension,
+                    "fileType" to doc.fileType.mimeType,
                     "fileUrl" to (doc.uri?.toString() ?: ""),
                     "printSettings" to printSettingsMap
                 )
